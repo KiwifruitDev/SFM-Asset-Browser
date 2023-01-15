@@ -7,6 +7,7 @@ This is a simple asset browser for Source Filmmaker.
 ## Features
 
 - Browse folders in a tree view
+- Double click on folders to expand them
 - User-defined asset tags with custom icons (modifiable via JSON)
 - Importing of several models at a time (using the "Model Stack" asset tag)
 - Copying paths to clipboard

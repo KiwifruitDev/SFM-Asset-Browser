@@ -416,7 +416,6 @@ class AssetBrowserWindow(QtGui.QWidget):
             basePath = basePath[2:]
             # Add cwd to path
             basePath = os.path.join(os.getcwd(), basePath)
-        print(basePath)
         # Parse each asset type
         if asset.assetType == "map":
             # Load map
@@ -611,10 +610,7 @@ class AssetBrowserWindow(QtGui.QWidget):
             except:
                 if f:
                     f.close()
-                QtGui.QMessageBox.critical(self, "Asset Browser: Error", "Error writing to assetTags.json. Asset tags will not be available.")
-                # Delete file if it exists
-                if os.path.isfile(assetBrowser_modPath + "/assetTags.json"):
-                    os.remove(assetBrowser_modPath + "/assetTags.json")
+                QtGui.QMessageBox.critical(self, "Asset Browser: Error", "Error writing to assetTags.json. Asset tags will not be available.\nMaybe try restarting Source Filmmaker? Delete assetTags.json if possible.")
         try:
             f = open(assetBrowser_modPath + "/assetTags.json", "r")
             # Parse json
@@ -634,7 +630,7 @@ class AssetBrowserWindow(QtGui.QWidget):
                 # Add tag
                 self.tags.append(Tag(tag["tagName"], tag["tagValue"], tag["tagImage"], assets))
         except:
-            QtGui.QMessageBox.critical(self, "Asset Browser: Error", "Error reading assetTags.json. Asset tags will not be available.")
+            QtGui.QMessageBox.critical(self, "Asset Browser: Error", "Error reading assetTags.json. Asset tags will not be available.\nMaybe try restarting Source Filmmaker? Delete assetTags.json if possible.")
 
     def addTagsToList(self):
         # Add tags
