@@ -589,20 +589,23 @@ class AssetBrowserWindow(QtGui.QWidget):
             # Create file
             f = open(assetBrowser_modPath + "/assetTags.json", "w")
             # Create json from defaultTags
-            preJson = {}
-            preJson["tags"] = []
-            for tag in self.defaultTags:
-                tagObject = {}
-                tagObject["tagName"] = tag.tagName
-                tagObject["tagValue"] = tag.tagValue
-                tagObject["tagImage"] = tag.tagImage
-                tagObject["children"] = []
-                for child in tag.children:
-                    tagObject["children"].append(child.assetPath)
-                preJson["tags"].append(tagObject)
+            # HACK: This doesn't work anymore, so we're writing it directly now.
+            #preJson = {}
+            #preJson["tags"] = []
+            #for tag in self.defaultTags:
+                #tagObject = {}
+                #tagObject["tagName"] = tag.tagName
+                #tagObject["tagValue"] = tag.tagValue
+                #tagObject["tagImage"] = tag.tagImage
+                #tagObject["children"] = []
+                #for child in tag.children:
+                    #tagObject["children"].append(child.assetPath)
+                #preJson["tags"].append(tagObject)
             # Write json to file
             try:
-                json.dump(preJson, f)
+                #json.dump(preJson, f)
+                jsonstr = "{\"tags\": [{\"tagValue\": \"favorites\", \"children\": [], \"tagName\": \"Favorites\", \"tagImage\": \"assetbrowser/images/assettags/favorites_sm.png\"}, {\"tagValue\": \"red\", \"children\": [], \"tagName\": \"Red\", \"tagImage\": \"assetbrowser/images/assettags/red_sm.png\"}, {\"tagValue\": \"green\", \"children\": [], \"tagName\": \"Green\", \"tagImage\": \"assetbrowser/images/assettags/green_sm.png\"}, {\"tagValue\": \"blue\", \"children\": [], \"tagName\": \"Blue\", \"tagImage\": \"assetbrowser/images/assettags/blue_sm.png\"}, {\"tagValue\": \"modelstack\", \"children\": [], \"tagName\": \"Model Stack\", \"tagImage\": \"assetbrowser/images/assettags/modelstack_sm.png\"}]}"
+                f.write(jsonstr)
                 f.close()
             except:
                 if f:
@@ -651,7 +654,7 @@ class AssetBrowserWindow(QtGui.QWidget):
     def saveAssetTags(self):
         # Format: {"tags":[{"tagName": "Tag Name", "tagValue": "tagValue", "tagImage": assetBrowser_modPath + "/images/assettags/tag_sm.png", "children": ["./hl2/sound/error.wav"]}, ...]}
         # Open file
-        f = open("assetTags.json", "w")
+        f = open(assetBrowser_modPath + "/assetTags.json", "w")
         # Create json from tags
         preJson = {}
         preJson["tags"] = []
