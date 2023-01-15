@@ -12,6 +12,7 @@ This is a simple asset browser for Source Filmmaker.
 - Copying paths to clipboard
 - Visiting the file in explorer
 - Previewing of sounds (requires game window/F11)
+- Viewing textures/materials in external apps (VTFEdit?)
 - Session loading
 - Map loading
 

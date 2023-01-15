@@ -421,6 +421,14 @@ class AssetBrowserWindow(QtGui.QWidget):
         if asset.assetType == "map":
             # Load map
             sfmApp.LoadMap(basePath)
+            # Disable undo system
+            dm.SetUndoEnabled(False)
+            # Get current shot
+            shot = sfmApp.GetShotAtCurrentTime(sfmApp.GetHeadTimeInFrames())
+            # Set mapname in shot
+            shot.SetValue("mapname", basePath)
+            # Enable undo system
+            dm.SetUndoEnabled(True)
         elif asset.assetType == "model":
             # Show information on how to import a model
             QtGui.QMessageBox.information(self, "Asset Browser: Model Import", "To import models, right click and check the \"Model Stack\" tag, then run\nthe \"asset_browser_import_models\" rig script from any animation set.")
@@ -581,7 +589,7 @@ class AssetBrowserWindow(QtGui.QWidget):
     def loadAssetTags(self):
         # Format: {"tags":[{"tagName": "Tag Name", "tagValue": "tagValue", "tagImage": assetBrowser_modPath + "/images/assettags/tag_sm.png", "children": ["./hl2/sound/error.wav"]}, ...]}
         # Open file if it exists
-        if not os.path.isfile(assetBrowser_modPath + "assetTags.json"):
+        if not os.path.isfile(assetBrowser_modPath + "/assetTags.json"):
             # Create file
             f = open(assetBrowser_modPath + "/assetTags.json", "w")
             # Create json from defaultTags
@@ -597,26 +605,36 @@ class AssetBrowserWindow(QtGui.QWidget):
                     tagObject["children"].append(child.assetPath)
                 preJson["tags"].append(tagObject)
             # Write json to file
-            json.dump(preJson, f)
+            try:
+                json.dump(preJson, f)
+                f.close()
+            except:
+                if f:
+                    f.close()
+                QtGui.QMessageBox.critical(self, "Asset Browser: Error", "Error writing to assetTags.json. Asset tags will not be available.")
+                # Delete file if it exists
+                if os.path.isfile(assetBrowser_modPath + "/assetTags.json"):
+                    os.remove(assetBrowser_modPath + "/assetTags.json")
+        try:
+            f = open(assetBrowser_modPath + "/assetTags.json", "r")
+            # Parse json
+            data = json.load(f)
             # Close file
             f.close()
-        f = open(assetBrowser_modPath + "/assetTags.json", "r")
-        # Parse json
-        data = json.load(f)
-        # Close file
-        f.close()
-        # Add tag to "tags" list
-        for tag in data["tags"]:
-            # Get assets from children
-            assets = []
-            for child in tag["children"]:
-                # Replace / with \
-                child = child.replace("/", "\\")
-                asset = self.recursiveGetAssetFromPath(child)
-                if asset:
-                    assets.append(asset)
-            # Add tag
-            self.tags.append(Tag(tag["tagName"], tag["tagValue"], tag["tagImage"], assets))
+            # Add tag to "tags" list
+            for tag in data["tags"]:
+                # Get assets from children
+                assets = []
+                for child in tag["children"]:
+                    # Replace / with \
+                    child = child.replace("/", "\\")
+                    asset = self.recursiveGetAssetFromPath(child)
+                    if asset:
+                        assets.append(asset)
+                # Add tag
+                self.tags.append(Tag(tag["tagName"], tag["tagValue"], tag["tagImage"], assets))
+        except:
+            QtGui.QMessageBox.critical(self, "Asset Browser: Error", "Error reading assetTags.json. Asset tags will not be available.")
 
     def addTagsToList(self):
         # Add tags
