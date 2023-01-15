@@ -62,7 +62,3 @@ for modelName in assetBrowser_globalModelStack:
         cameraAngles = QuaternionToEuler(cameraQuat.x, cameraQuat.y, cameraQuat.z, cameraQuat.w)
         sfm.Move( cameraPos.x, cameraPos.y, cameraPos.z )
         sfm.Rotate( cameraAngles[0], cameraAngles[1], cameraAngles[2] )
-        
-
-# Clear stack
-assetBrowser_globalModelStack = []
