@@ -150,9 +150,6 @@ class AssetBrowserWindow(QtGui.QWidget):
         # Check if assetFile is a folder
         if os.path.isdir(fullPath):
             return "folder"
-        # Check if assetFile is inside of skybox folder
-        if "skybox" in assetFile:
-            return "sky"
         # Get file extension
         fileExtension = os.path.splitext(assetFile)[1]
         # Check if file extension is in assetTypes
