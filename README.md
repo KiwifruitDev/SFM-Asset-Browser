@@ -15,6 +15,11 @@ This is a simple asset browser for Source Filmmaker.
 - Session loading
 - Map loading
 
+## Warning
+
+This script pulls image data from a GitHub release using PowerShell.
+I advise you to review the script contents before trusting it.
+
 ## Installation
 
 1. Download the script from the [Workshop](https://steamcommunity.com/sharedfiles/filedetails/?id=2918590103)

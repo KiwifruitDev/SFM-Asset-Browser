@@ -683,6 +683,9 @@ class AssetBrowserWindow(QtGui.QWidget):
         try:
             # Download from repo
             os.system("powershell -Command Invoke-WebRequest -URI \"" + assetBrowser_repo + "\" -OutFile \"assetBrowser.zip\"")
+            # Make sure assetBrowser_modPath exists
+            if not os.path.isdir(assetBrowser_modPath):
+                os.makedirs(assetBrowser_modPath)
             # Unzip assetBrowser_repo
             zip_ref = zipfile.ZipFile("assetBrowser.zip", "r")
             zip_ref.extractall(assetBrowser_modPath)
