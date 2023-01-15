@@ -92,9 +92,9 @@ class AssetBrowserWindow(QtGui.QWidget):
     assetTypes = {
         ".bsp": "map",
 
-        #".vmt": "material",
+        ".vmt": "material",
 
-        #".vtf": "texture",
+        ".vtf": "texture",
 
         ".mdl": "model",
 
@@ -128,6 +128,7 @@ class AssetBrowserWindow(QtGui.QWidget):
     whiteList = [
         "maps",
         "models",
+        "materials",
         "particles",
         "sound",
         "elements",
@@ -269,8 +270,9 @@ class AssetBrowserWindow(QtGui.QWidget):
         #    item_small.setText(0, "Item %d" % i)
         #    item_small.setIcon(0, QtGui.QPixmap.fromImage(self.assetIcons_Small["generic"]))
         #    self.list.addTopLevelItem(item_small)
-        # Print success message
-        sfm.Msg("Control list widget initialized\n")
+        # Make sure assetBrowser_modPath exists
+        if not os.path.isdir(assetBrowser_modPath):
+            os.makedirs(assetBrowser_modPath)
         #self.recursiveScan(".") # game root
         # Get folders in .
         for item in os.listdir("."):
@@ -399,8 +401,9 @@ class AssetBrowserWindow(QtGui.QWidget):
     def assetDoubleClicked(self, asset):
         # Get base path (remove .\*\*\)
         basePath = asset.assetPath
-        # SFM sessions don't have a base path
-        if asset.assetType != "sfmsession":
+        # TODO: What about text?
+        # SFM sessions don't have a base path and materials/textures need cwd
+        if asset.assetType != "sfmsession" and asset.assetType != "material" and asset.assetType != "texture":
             basePath = basePath[basePath.find("\\")+1:]
             basePath = basePath[basePath.find("\\")+1:]
             # Models use a prefix, others don't
@@ -425,6 +428,9 @@ class AssetBrowserWindow(QtGui.QWidget):
             # Close current session and open new one
             sfmApp.CloseDocument(forceSilent=False)
             sfmApp.OpenDocument(basePath)
+        elif asset.assetType == "material" or asset.assetType == "texture":
+            # Open in external editor (vtfedit? vscode?)
+            os.startfile(basePath)
 
     def listItemClicked(self, item):
         # Get asset from path
@@ -683,9 +689,6 @@ class AssetBrowserWindow(QtGui.QWidget):
         try:
             # Download from repo
             os.system("powershell -Command Invoke-WebRequest -URI \"" + assetBrowser_repo + "\" -OutFile \"assetBrowser.zip\"")
-            # Make sure assetBrowser_modPath exists
-            if not os.path.isdir(assetBrowser_modPath):
-                os.makedirs(assetBrowser_modPath)
             # Unzip assetBrowser_repo
             zip_ref = zipfile.ZipFile("assetBrowser.zip", "r")
             zip_ref.extractall(assetBrowser_modPath)
