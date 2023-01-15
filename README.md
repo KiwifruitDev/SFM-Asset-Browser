@@ -17,4 +17,14 @@ This is a simple asset browser for Source Filmmaker.
 
 ## Installation
 
-1. Download 
+1. Download the script from the [Workshop](https://steamcommunity.com/sharedfiles/filedetails/?id=2918590103)
+2. Optional: Download the [latest release](https://github.com/KiwifruitDev/SFM-Asset-Browser/releases/latest) and extract it to `game/assetbrowser/`
+3. Open the script in SFM using the `Scripts` tab > `KiwifruitDev` > `Asset Browser`
+
+## Support Me
+
+If you like my work, consider supporting me on [Ko-fi](https://ko-fi.com/kiwifruitdev) or [Patreon](https://www.patreon.com/kiwifruitdev).
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
