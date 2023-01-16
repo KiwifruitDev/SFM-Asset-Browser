@@ -24,12 +24,13 @@
 
 from PySide import QtCore, QtGui, shiboken
 from vs import g_pDataModel as dm
-import vs, sfmApp, sfm, sfmUtils, json, os, urllib, zipfile, hashlib, re, subprocess
+import vs, sfmApp, sfm, sfmUtils, json, os, urllib, zipfile, hashlib, re, subprocess, threading, time
 
 assetBrowser_repo = "https://github.com/KiwifruitDev/SFM-Asset-Browser/releases/latest/download/assetbrowser.zip"
 assetBrowser_modPath = "assetbrowser"
 assetBrowser_globalModelStack = []
 assetBrowser_version = "2"
+assetBrowser_window = None
 
 class Tag:
     def __init__(self, tagName, tagValue, tagImage, children):
@@ -207,11 +208,27 @@ class AssetBrowserWindow(QtGui.QWidget):
         "image",
     ]
 
+    ignorables = [
+        "materials",
+    ]
+
+    ignoreTypes = [
+        "materials",
+    ]
+
     modTypes = [
         "usermod",
     ]
 
     mods = []
+
+    staticFolderIcon = None
+
+    currentFolder = ""
+
+    oldCurrentFolder = ""
+
+    refreshActive = False
 
     defaultTags = [
         Tag("Favorites", "favorites", assetBrowser_modPath + "/images/assettags/favorites_sm.png", []),
@@ -249,6 +266,7 @@ class AssetBrowserWindow(QtGui.QWidget):
         #self.modTypes = self.mods
 
     def initUI(self):
+        self.staticFolderIcon = QtGui.QPixmap.fromImage(QtGui.QImage(self.assetIcons_Small["folder"]))
         # Populate default filter types
         #self.populateDefaultFilterTypes()
         # Get mods
@@ -341,6 +359,22 @@ class AssetBrowserWindow(QtGui.QWidget):
         self.toolbarLayout.setContentsMargins(10,10,10,10)
         self.toolbarLayout.setSpacing(10)
         self.toolbarLayout.setAlignment(QtCore.Qt.AlignLeft)
+        # Create search box
+        self.searchBox = QtGui.QLineEdit(self.toolbar)
+        self.searchBox.setPlaceholderText("Search")
+        self.searchBox.setToolTip("Search for a file.")
+        self.searchBox.textChanged.connect(self.searchBoxTextChanged)
+        self.toolbarLayout.addWidget(self.searchBox)
+        # Create index amount integer box label
+        self.indexAmountBoxLabel = QtGui.QLabel(self.toolbar)
+        self.indexAmountBoxLabel.setText("Max Depth:")
+        self.toolbarLayout.addWidget(self.indexAmountBoxLabel)
+        # Create index amount integer box
+        self.indexAmountBox = QtGui.QSpinBox(self.toolbar)
+        self.indexAmountBox.setRange(1, 8192)
+        self.indexAmountBox.setValue(3)
+        self.indexAmountBox.setToolTip("Maximum folder depth. Setting this value too high with too many filters/mods selected will take a LONG time to refresh.")
+        self.toolbarLayout.addWidget(self.indexAmountBox)
         # Create filter list button
         self.filterListButton = QtGui.QToolButton(self.toolbar)
         self.filterListButton.setText("Filters (%d)" % len(self.filterTypes))
@@ -361,29 +395,40 @@ class AssetBrowserWindow(QtGui.QWidget):
         self.modListButton.setMenu(self.modListButtonMenu)
         self.modListButtonMenu.aboutToShow.connect(self.modListButtonMenuAboutToShow)
         self.toolbarLayout.addWidget(self.modListButton)
-        # Create search box
-        self.searchBox = QtGui.QLineEdit(self.toolbar)
-        self.searchBox.setPlaceholderText("Search")
-        self.searchBox.setToolTip("Search for a file.")
-        self.searchBox.textChanged.connect(self.searchBoxTextChanged)
-        self.toolbarLayout.addWidget(self.searchBox)
+        # Create ignore button
+        self.ignoreButton = QtGui.QToolButton(self.toolbar)
+        self.ignoreButton.setText("Ignore (%d)" % len(self.ignoreTypes))
+        self.ignoreButton.setToolButtonStyle(QtCore.Qt.ToolButtonTextBesideIcon)
+        self.ignoreButton.setPopupMode(QtGui.QToolButton.InstantPopup)
+        self.ignoreButton.setToolTip("Ignore specific root folders (i.e materials).")
+        self.ignoreButtonMenu = QtGui.QMenu()
+        self.ignoreButton.setMenu(self.ignoreButtonMenu)
+        self.ignoreButtonMenu.aboutToShow.connect(self.ignoreButtonMenuAboutToShow)
+        self.toolbarLayout.addWidget(self.ignoreButton)
         # Create refresh button
         self.refreshButton = QtGui.QToolButton(self.toolbar)
         self.refreshButton.setText("Refresh")
         self.refreshButton.setToolButtonStyle(QtCore.Qt.ToolButtonTextBesideIcon)
-        self.refreshButton.setToolTip("Refresh the list of files. This will cause SFM to freeze.")
+        self.refreshButton.setToolTip("Refresh or cancel refreshing the list of files.")
         self.refreshButton.clicked.connect(self.refreshButtonClicked)
         self.toolbarLayout.addWidget(self.refreshButton)
-        # Create index amount integer box label
-        self.indexAmountBoxLabel = QtGui.QLabel(self.toolbar)
-        self.indexAmountBoxLabel.setText("Index Amount:")
-        self.toolbarLayout.addWidget(self.indexAmountBoxLabel)
-        # Create index amount integer box
-        self.indexAmountBox = QtGui.QSpinBox(self.toolbar)
-        self.indexAmountBox.setRange(1, 8192)
-        self.indexAmountBox.setValue(1024)
-        self.indexAmountBox.setToolTip("Recursive index amount. Setting this value too high with too many filters/mods selected may cause SFM to freeze indefinitely.")
-        self.toolbarLayout.addWidget(self.indexAmountBox)
+        # Save/load settings button
+        self.saveButton = QtGui.QToolButton(self.toolbar)
+        self.saveButton.setText("Save")
+        self.saveButton.setToolButtonStyle(QtCore.Qt.ToolButtonTextBesideIcon)
+        self.saveButton.setToolTip("Save settings and current assets loaded to a file.")
+        self.saveButton.clicked.connect(self.saveButtonClicked)
+        self.toolbarLayout.addWidget(self.saveButton)
+        self.loadButton = QtGui.QToolButton(self.toolbar)
+        self.loadButton.setText("Load")
+        self.loadButton.setToolButtonStyle(QtCore.Qt.ToolButtonTextBesideIcon)
+        self.loadButton.setToolTip("Load settings and assets from a file.")
+        self.loadButton.clicked.connect(self.loadButtonClicked)
+        self.toolbarLayout.addWidget(self.loadButton)
+        # Create status text
+        self.statusText = QtGui.QLabel(self.toolbar)
+        self.statusText.setText("Ready")
+        self.toolbarLayout.addWidget(self.statusText)
         # Create spacer
         self.toolbarSpacer = QtGui.QSpacerItem(0, 0, QtGui.QSizePolicy.Expanding, QtGui.QSizePolicy.Minimum)
         self.toolbarLayout.addItem(self.toolbarSpacer)
@@ -418,23 +463,106 @@ class AssetBrowserWindow(QtGui.QWidget):
         self.list.sortItems(0, QtCore.Qt.AscendingOrder)
         # Check version
         self.checkVersion()
+        # Add dummy root item
+        dummy = QtGui.QTreeWidgetItem()
+        dummy.setText(0, "Root (Click refresh to populate)")
+        dummy.setIcon(0, QtGui.QPixmap.fromImage(QtGui.QImage(self.assetIcons_Small["folder"])))
+        self.list.addTopLevelItem(dummy)
         # Update tags
         self.loadAssetTags()
         # Update list for tags
         self.addTagsToList()
         # Update list
         #self.recursiveUpdateList()
-        # Add dummy root item
-        dummy = QtGui.QTreeWidgetItem()
-        dummy.setText(0, "Root (Click refresh to populate)")
-        dummy.setIcon(0, QtGui.QPixmap.fromImage(QtGui.QImage(self.assetIcons_Small["folder"])))
-        self.list.addTopLevelItem(dummy)
         # Expand top level items
         for i in range(self.list.topLevelItemCount()):
             self.list.topLevelItem(i).setExpanded(True)
         # Click on first item
         self.list.setCurrentItem(self.list.topLevelItem(0))
         self.listItemClicked(self.list.topLevelItem(0))
+
+    def saveButtonClicked(self):
+        # Serialize settings
+        settings = {}
+        settings["ignorables"] = self.ignorables
+        settings["ignoreTypes"] = self.ignoreTypes
+        settings["modTypes"] = self.modTypes
+        settings["mods"] = self.mods
+        # Serialize root asset
+        rootAsset = {}
+        rootAsset["assetName"] = self.rootAsset.assetName
+        rootAsset["assetType"] = self.rootAsset.assetType
+        rootAsset["assetPath"] = self.rootAsset.assetPath
+        rootAsset["mod"] = self.rootAsset.mod
+        rootAsset["children"] = self.rootAsset.children
+        # Serialize assets
+        assets = {}
+        for uuid, asset in self.everyAsset.items():
+            assets[uuid] = {}
+            assets[uuid]["assetName"] = asset.assetName
+            assets[uuid]["assetType"] = asset.assetType
+            assets[uuid]["assetPath"] = asset.assetPath
+            assets[uuid]["mod"] = asset.mod
+            assets[uuid]["children"] = asset.children
+        # Serialize to file
+        data = {}
+        data["settings"] = settings
+        data["rootAsset"] = rootAsset
+        data["assets"] = assets
+        # Ask where to save
+        filename, type = QtGui.QFileDialog.getSaveFileName(self, "Save asset browser data", assetBrowser_modPath, "Asset Browser Data (*.json)")
+        if filename:
+            with open(filename, "w") as f:
+                json.dump(data, f, indent=4)
+
+    def loadButtonClicked(self):
+        # Ask where to load from
+        filename, type = QtGui.QFileDialog.getOpenFileName(self, "Load asset browser data", assetBrowser_modPath, "Asset Browser Data (*.json)")
+        if filename:
+            with open(filename, "r") as f:
+                data = json.load(f)
+            # Deserialize settings
+            self.ignorables = data["settings"]["ignorables"]
+            self.ignoreTypes = data["settings"]["ignoreTypes"]
+            self.modTypes = data["settings"]["modTypes"]
+            self.mods = data["settings"]["mods"]
+            # Deserialize root asset
+            self.rootAsset = Asset(data["rootAsset"]["assetType"], data["rootAsset"]["assetName"], data["rootAsset"]["assetPath"], data["rootAsset"]["mod"], data["rootAsset"]["children"])
+            # Deserialize assets
+            self.everyAsset = {}
+            for uuid, assetData in data["assets"].items():
+                asset = Asset(assetData["assetType"], assetData["assetName"], assetData["assetPath"], assetData["mod"], assetData["children"])
+                self.everyAsset[uuid] = asset
+            self.list.clear()
+            # Update list
+            self.recursiveUpdateList()
+            # Update tags
+            self.loadAssetTags()
+            # Update list for tags
+            self.addTagsToList()
+            # Expand top level items
+            for i in range(self.list.topLevelItemCount()):
+                self.list.topLevelItem(i).setExpanded(True)
+            
+    def ignoreButtonMenuAboutToShow(self):
+        # Clear menu
+        self.ignoreButtonMenu.clear()
+        # Add ignore types
+        for ignoreType in self.ignorables:
+            action = QtGui.QAction(ignoreType, self.ignoreButtonMenu)
+            action.setCheckable(True)
+            action.setChecked(ignoreType in self.ignoreTypes)
+            action.triggered.connect(self.ignoreButtonMenuActionTriggered)
+            self.ignoreButtonMenu.addAction(action)
+
+    def ignoreButtonMenuActionTriggered(self):
+        action = self.sender()
+        if action.isChecked():
+            self.ignoreTypes.append(action.text())
+        else:
+            self.ignoreTypes.remove(action.text())
+        # Update text
+        self.ignoreButton.setText("Ignore (%d)" % len(self.ignoreTypes))
 
     def populateDefaultFilterTypes(self):
         self.filterTypes = []
@@ -475,7 +603,10 @@ class AssetBrowserWindow(QtGui.QWidget):
         searchText = self.searchBox.text()
         if searchText != "":
             self.searchBoxTextChanged(searchText)
-        self.listItemClicked(self.list.currentItem())
+        else:
+            curitem = self.list.currentItem()
+            if curitem is not None:
+                self.listItemClicked(curitem)
 
     def filterListButtonMenuActionTriggered(self):
         # Update filter types
@@ -488,13 +619,16 @@ class AssetBrowserWindow(QtGui.QWidget):
         searchText = self.searchBox.text()
         if searchText != "":
             self.searchBoxTextChanged(searchText)
-        self.listItemClicked(self.list.currentItem())
+        else:
+            self.listItemClicked(self.list.currentItem())
 
     def searchBoxTextChanged(self, text):
         self.gridList.clear()
         # Disable list if text is not empty
         if text != "":
             self.list.setEnabled(False)
+            self.oldCurrentFolder = self.currentFolder
+            self.currentFolder = ""
             # Update grid list
             for assetUuid, asset in self.everyAsset.items():
                 if text.lower() in asset.assetName.lower():
@@ -507,46 +641,66 @@ class AssetBrowserWindow(QtGui.QWidget):
                         self.gridList.addItem(item)
         else:
             self.list.setEnabled(True)
+            self.currentFolder = self.oldCurrentFolder
             # Re-populate grid list
             self.listItemClicked(self.list.currentItem())
 
     def refreshButtonClicked(self):
-        # Clear list
-        self.list.clear()
-        # Clear grid
-        self.gridList.clear()
-        # Clear assets
-        self.rootAsset.children = []
-        self.everyAsset = {}
-        # Get folders in .
-        for item in os.listdir("."):
-            fullpath = os.path.join(".", item)
-            if os.path.isdir(fullpath):
-                self.recursiveScan(fullpath) # Add mod folder
-        # Sort alphabetically
-        self.list.sortItems(0, QtCore.Qt.AscendingOrder)
-        # Update tags
-        self.loadAssetTags()
-        # Update list for tags
-        self.addTagsToList()
-        # Update list
-        self.recursiveUpdateList()
-        # Expand top level items
-        for i in range(self.list.topLevelItemCount()):
-            self.list.topLevelItem(i).setExpanded(True)
-        # Click on first item
-        self.list.setCurrentItem(self.list.topLevelItem(0))
-        self.listItemClicked(self.list.topLevelItem(0))
+        if self.refreshActive:
+            self.refreshActive = False
+        else:
+            self.statusText.setText("Refreshing...")
+            # Set text to cancel
+            self.refreshButton.setText("Cancel")
+            # Disable buttons
+            self.ignoreButton.setEnabled(False)
+            self.filterListButton.setEnabled(False)
+            self.modListButton.setEnabled(False)
+            self.indexAmountBox.setEnabled(False)
+            # Clear list
+            self.list.clear()
+            # Clear grid
+            self.gridList.clear()
+            # Clear ignorables
+            self.ignorables = []
+            # Clear assets
+            self.rootAsset.children = []
+            self.everyAsset = {}
+            # Get folders in .
+            self.refreshActive = True
+            for item in os.listdir("."):
+                fullpath = os.path.join(".", item)
+                if os.path.isdir(fullpath):
+                    self.recursiveScan(fullpath) # Add mod folder
+            # Update tags
+            self.loadAssetTags()
+            # Update list for tags
+            self.addTagsToList()
+            # Update list
+            self.recursiveUpdateList()
+            self.refreshActive = False
+            # Merge ignorables with ignoredTypes
+            self.ignorables = list(set(self.ignoreTypes + self.ignorables))
+            self.statusText.setText("Complete")
+            self.refreshButton.setText("Refresh")
+            self.ignoreButton.setEnabled(True)
+            self.filterListButton.setEnabled(True)
+            self.modListButton.setEnabled(True)
+            self.indexAmountBox.setEnabled(True)
 
     def getUUID(self, path):
         # Get uuid from path
         uuid = hashlib.md5(path).hexdigest()
         return uuid
 
-    def recursiveScan(self, path, parent=None):
-        times = self.indexAmountBox.value()
+    def recursiveScan(self, path, parent=None, depth=0):
         # Scan the given path recursively
         for item in os.listdir(path):
+            # Update qt
+            sfmApp.ProcessEvents()
+            # Check if we should stop
+            if not self.refreshActive:
+                return
             fullpath = os.path.join(path, item)
             assetType = self.getTypeOfAsset(item, fullpath)
             # Is type filtered?
@@ -570,8 +724,27 @@ class AssetBrowserWindow(QtGui.QWidget):
             # Is mod filtered?
             if modPath not in self.modTypes:
                 continue
+            # Check if second folder is ignored
+            if nonModPath.find("/") != -1:
+                secondFolder = nonModPath[:nonModPath.find("/")]
+                if secondFolder.lower() in self.ignoreTypes:
+                    continue
             uuid = self.getUUID(nonModPath)
             asset = Asset(assetType, item, fullpath, modPath, [])
+            # Update list
+            self.recursiveUpdateList()
+            # Update grid
+            curitem = self.list.currentItem()
+            if curitem is not None:
+                # Get mod path but remove the file name
+                modPathWithoutFile = re.sub("/[^/]*$", "", nonModPath)
+                # Replace / with \ 
+                modPathWithoutFile = modPathWithoutFile.replace("/", "\\")
+                # Add .\modPath
+                modPathWithoutFile = u".\\" + modPath + "\\" + modPathWithoutFile
+                # Check if current folder is the same as the mod path
+                if self.currentFolder == modPathWithoutFile:
+                    self.listItemClicked(curitem)
             # Does asset uuid already exist?
             taken = False
             for uuid2 in self.everyAsset.keys():
@@ -597,11 +770,9 @@ class AssetBrowserWindow(QtGui.QWidget):
                 asset = self.getAssetFromUUID(uuid)
             # Check if asset is a folder
             if asset.assetType == "folder":
-                # Scan folder
-                self.recursiveScan(fullpath, asset)
-            times -= 1
-            if times == 0:
-                break
+                if depth <= self.indexAmountBox.value():
+                    # Scan folder
+                    self.recursiveScan(fullpath, asset, depth+1)
 
     def getAssetFromUUID(self, uuid):
         for assetUuid, asset in self.everyAsset.items():
@@ -618,21 +789,69 @@ class AssetBrowserWindow(QtGui.QWidget):
         # Don't add files
         if assetParent.assetType != "folder":
             return
+        # First, check to see if asset is in list already
+        item = self.recursiveGetAssetListItem(depthText + assetParent.assetName)
+        if item:
+            # Update item
+            item.setToolTip(0, assetParent.assetPath)
+            # Add children
+            for childUuid in assetParent.children:
+                child = self.getAssetFromUUID(childUuid)
+                self.recursiveUpdateList(child, item, depth+1)
+            return
         # Add asset to list
         item_small = QtGui.QTreeWidgetItem(itemParent)
         item_small.setText(0, depthText + assetParent.assetName)
-        item_small.setIcon(0, QtGui.QPixmap.fromImage(QtGui.QImage(self.assetIcons_Small[assetParent.assetType])))
+        item_small.setIcon(0, self.staticFolderIcon)
         item_small.setToolTip(0, assetParent.assetPath)
         # Add to list
         if itemParent:
             itemParent.addChild(item_small)
         else:
             self.list.addTopLevelItem(item_small)
+        # If 0 depth, expand
+        if depth == 0:
+            item_small.setExpanded(True)
+        elif depth == 1:
+            # Add to ignore list
+            self.ignorables.append(assetParent.assetName)
         # Add children
         for childUuid in assetParent.children:
             child = self.getAssetFromUUID(childUuid)
             self.recursiveUpdateList(child, item_small, depth+1)
-    
+
+    def recursiveGetAssetListItem(self, text, item=None):
+        # Loop through all items
+        if item is None:
+            for i in range(self.list.topLevelItemCount()):
+                item = self.list.topLevelItem(i)
+                # Check if item is valid
+                if item is None:
+                    continue
+                # Check if item is asset
+                if item.text(0) == text:
+                    return item
+                # Check children recursively
+                child = self.recursiveGetAssetListItem(text, item)
+                if child:
+                    return child
+            return None
+        else:
+            # Check if item is asset
+            if item.text(0) == text:
+                return item
+            # Check children recursively
+            for i in range(item.childCount()):
+                child = item.child(i)
+                # Check if item is asset
+                if child.text(0) == text:
+                    return child
+                # Check children recursively
+                child = self.recursiveGetAssetListItem(text, child)
+                if child:
+                    return child
+        return None
+            
     def recursiveGetAssetFromPath(self, path, assetParent=None):
         nonModPath = path[path.find("\\")+1:]
         nonModPath = nonModPath[nonModPath.find("\\")+1:]
@@ -718,13 +937,19 @@ class AssetBrowserWindow(QtGui.QWidget):
                         self.list.setCurrentItem(child)
                         self.listItemClicked(child)
                         break
+                #QtGui.QMessageBox.information(self, "Asset Browser: Error", "This folder is empty using the current filter settings.")
         else:
             # Open in external editor (vtfedit? vscode?)
             os.startfile(rootPath)
 
     def listItemClicked(self, item):
+        self.currentFolder = item.toolTip(0)
+        asset = None
         # Get asset from path
-        asset = self.recursiveGetAssetFromPath(item.toolTip(0))
+        if item.toolTip(0) == ".":
+            asset = self.rootAsset
+        else:
+            asset = self.recursiveGetAssetFromPath(item.toolTip(0))
         if asset:
             # Reset grid icons and add new ones
             self.gridList.clear()
@@ -740,14 +965,13 @@ class AssetBrowserWindow(QtGui.QWidget):
                         self.gridList.addItem(item)
         else:
             # Presume tag was clicked
-            tagValue = item.toolTip(0)
             # Reset grid icons and add new ones
             self.gridList.clear()
             for tag in self.tags:
-                if tag.tagValue == tagValue:
+                if tag.tagValue == item.toolTip(0):
                     for asset in tag.children:
                         # Is asset filtered?
-                        if asset.assetType in self.assetTypeBaseNames:
+                        if asset.assetType in self.filterTypes and asset.mod in self.modTypes:
                             item = QtGui.QListWidgetItem()
                             item.setText(asset.assetName)
                             item.setData(QtCore.Qt.DecorationRole, QtGui.QImage(self.assetIcons_Large[asset.assetType]))
@@ -764,6 +988,8 @@ class AssetBrowserWindow(QtGui.QWidget):
     def gridItemRightClicked(self):
         # Get item
         item = self.gridList.currentItem()
+        if not item:
+            return
         # Get asset from path
         asset = self.recursiveGetAssetFromPath(item.toolTip())
         # Create context menu
@@ -1057,7 +1283,6 @@ class AssetBrowserWindow(QtGui.QWidget):
         elif version != assetBrowser_version and pulled:
             # Version impossible to be met, assume future or dev version
             QtGui.QMessageBox.information(self, "Asset Browser: Update", "A development version of Asset Browser has been detected. Update could not succeed.")
-            
     
     def updateButtonClicked(self, button):
         # Check button
@@ -1065,11 +1290,15 @@ class AssetBrowserWindow(QtGui.QWidget):
             # Pull latest release
             self.pullLatestRelease()
 try:
-    # Create window
+    # Create window if it doesn't exist
     assetBrowser_globalModelStack = []
+    globalAssetBrowser = globals().get("assetBrowserWindow")
+    #if globalAssetBrowser is None:
     assetBrowserWindow=AssetBrowserWindow()
     sfmApp.RegisterTabWindow("WindowAssetBrowser", "Asset Browser", shiboken.getCppPointer( assetBrowserWindow )[0])
     sfmApp.ShowTabWindow("WindowAssetBrowser")
+    #else:
+    #QtGui.QMessageBox.warning(None, "Asset Browser: Error", "Asset Browser is already open.")
 
 except Exception  as e:
     import traceback
