@@ -28,9 +28,9 @@ import vs, sfmApp, sfm, sfmUtils, json, os, math
 
 # TODO: This doesn't move to the camera like it should.
 
-if globals["assetBrowser_globalModelStack"] is None:
-    QtGui.QMessageBox.critical(None, "Error", "Asset Browser is not loaded.")
-    assetBrowser_globalModelStack = []
+#if globals["assetBrowser_globalModelStack"] is None:
+    #QtGui.QMessageBox.critical(None, "Error", "Asset Browser is not loaded.")
+    #assetBrowser_globalModelStack = []
 
 def QuaternionToEuler(x, y, z, w):
     ysqr = y * y

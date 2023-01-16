@@ -380,7 +380,7 @@ class AssetBrowserWindow(QtGui.QWidget):
         self.toolbarLayout.addWidget(self.indexAmountBoxLabel)
         # Create index amount integer box
         self.indexAmountBox = QtGui.QSpinBox(self.toolbar)
-        self.indexAmountBox.setRange(1, 1024)
+        self.indexAmountBox.setRange(1, 8192)
         self.indexAmountBox.setValue(1024)
         self.indexAmountBox.setToolTip("Recursive index amount. Setting this value too high with too many filters/mods selected may cause SFM to freeze indefinitely.")
         self.toolbarLayout.addWidget(self.indexAmountBox)
@@ -947,6 +947,8 @@ class AssetBrowserWindow(QtGui.QWidget):
             QtGui.QMessageBox.critical(self, "Asset Browser: Error", "Error reading assetTags.json. Asset tags will not be available.\nMaybe try restarting Source Filmmaker? Delete assetTags.json if possible.")
 
     def addTagsToList(self):
+        # Clear model stack
+        assetBrowser_globalModelStack = []
         # Add tags
         for tag in self.tags:
             # If tag is modelstack, add to model stack
