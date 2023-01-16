@@ -24,12 +24,12 @@
 
 from PySide import QtCore, QtGui, shiboken
 from vs import g_pDataModel as dm
-import vs, sfmApp, sfm, sfmUtils, json, os, urllib, zipfile
+import vs, sfmApp, sfm, sfmUtils, json, os, urllib, zipfile, hashlib, re, subprocess
 
 assetBrowser_repo = "https://github.com/KiwifruitDev/SFM-Asset-Browser/releases/latest/download/assetbrowser.zip"
 assetBrowser_modPath = "assetbrowser"
 assetBrowser_globalModelStack = []
-assetBrowser_version = "1"
+assetBrowser_version = "2"
 
 class Tag:
     def __init__(self, tagName, tagValue, tagImage, children):
@@ -43,14 +43,16 @@ class Tag:
     children = []
 
 class Asset:
-    def __init__(self, assetType, assetName, assetPath, children):
+    def __init__(self, assetType, assetName, assetPath, mod, children):
         self.assetType = assetType
         self.assetName = assetName
         self.assetPath = assetPath
+        self.mod = mod
         self.children = children
     assetType = "generic"
     assetName = ""
     assetPath = ""
+    mod = ""
     children = []
 
 class AssetBrowserWindow(QtGui.QWidget):
@@ -82,12 +84,32 @@ class AssetBrowserWindow(QtGui.QWidget):
         self.assetIcons_Small["text"] = assetBrowser_modPath + "/images/assettypes/text_sm.png"
         self.assetIcons_Large["texture"] = assetBrowser_modPath + "/images/assettypes/texture_lg.png"
         self.assetIcons_Small["texture"] = assetBrowser_modPath + "/images/assettypes/texture_sm.png"
+        self.assetIcons_Large["image"] = assetBrowser_modPath + "/images/assettypes/image_lg.png"
+        self.assetIcons_Small["image"] = assetBrowser_modPath + "/images/assettypes/image_sm.png"
         self.assetIcons_Large["sound"] = assetBrowser_modPath + "/images/assettypes/sound_lg.png"
         self.assetIcons_Small["sound"] = assetBrowser_modPath + "/images/assettypes/sound_sm.png"
         self.assetIcons_Large["sfmsession"] = assetBrowser_modPath + "/images/assettypes/sfmsession_lg.png"
         self.assetIcons_Small["sfmsession"] = assetBrowser_modPath + "/images/assettypes/sfmsession_sm.png"
         # Init UI
         self.initUI()
+
+    assetTypeBaseNames = [
+        "folder",
+        "generic",
+        "map",
+        "material",
+        "mesh",
+        "model",
+        "particles",
+        "sky",
+        "text",
+        "texture",
+        "image",
+        "sound",
+        "sfmsession",
+    ]
+
+    firstDoubleClick = False
 
     assetTypes = {
         ".bsp": "map",
@@ -98,23 +120,67 @@ class AssetBrowserWindow(QtGui.QWidget):
 
         ".mdl": "model",
 
-        #".vtx": "mesh",
-        #".phy": "mesh",
-        #".vvd": "mesh",
+        ".vtx": "mesh",
+        ".phy": "mesh",
+        ".vvd": "mesh",
 
         ".pcf": "particles",
 
-        #".txt": "text",
-        #".cfg": "text",
-        #".py": "text",
+        ".txt": "text",
+        ".cfg": "text",
+        ".py": "text",
 
         ".dmx": "sfmsession",
+
+        ".jpg": "image",
+        ".jpeg": "image",
+        ".png": "image",
+        ".bmp": "image",
+        ".tga": "image",
+        ".gif": "image",
 
         ".wav": "sound",
         ".mp3": "sound",
     }
 
+    forbiddenMods = [
+        "bin",
+        "sdktools",
+        "screencast",
+        "assetbrowser",
+    ]
+
     forbiddenAssets = [
+        ".git",
+        "bin",
+        "data",
+        "classes",
+        "addons",
+        "cfg",
+        "config",
+        "demo",
+        "friends",
+        "elements/presets",
+        "admin",
+        "resource",
+        "servers",
+        "steam",
+        "tools",
+        "vgui",
+        "media",
+        "images",
+        "scripts",
+        "gfx",
+        "shaders",
+        "reslists",
+        "scenes",
+        "expressions",
+        "vguiedit",
+        "downloads",
+        "metadata",
+        "motionmappertemplates",
+        "phonemeextractors",
+        "qcgenerator",
         "vscripts",
         "playerclasses",
         "renders",
@@ -125,18 +191,26 @@ class AssetBrowserWindow(QtGui.QWidget):
         "midi",
     ]
 
-    whiteList = [
-        "maps",
-        "models",
-        "materials",
-        "particles",
-        "sound",
-        "elements",
-    ]
+    rootAsset = Asset("folder", "Root", ".", "", [])
 
-    rootAsset = Asset("folder", "Root", ".", [])
+    everyAsset = {}
     
     tags = []
+
+    filterTypes = [
+        "map",
+        "model",
+        "particles",
+        "sound",
+        "sfmsession",
+        "image",
+    ]
+
+    modTypes = [
+        "usermod",
+    ]
+
+    mods = []
 
     defaultTags = [
         Tag("Favorites", "favorites", assetBrowser_modPath + "/images/assettags/favorites_sm.png", []),
@@ -157,22 +231,42 @@ class AssetBrowserWindow(QtGui.QWidget):
             return self.assetTypes[fileExtension]
         return "generic"
 
+    def getMods(self):
+        # Get list of mods
+        mods = os.listdir(".")
+        # To lower case
+        mods = [mod.lower() for mod in mods]
+        # Remove forbidden mods
+        for forbiddenMod in self.forbiddenMods:
+            if forbiddenMod in mods:
+                mods.remove(forbiddenMod)
+        # Only add directories
+        for mod in mods:
+            if os.path.isdir(mod):
+                self.mods.append(mod)
+        # Set default mods
+        #self.modTypes = self.mods
+
     def initUI(self):
-        # Create inner widget (stores both grid and list)
+        # Populate default filter types
+        #self.populateDefaultFilterTypes()
+        # Get mods
+        self.getMods()
+        # Create inner widget (stores grid, list, search, filters, and settings button)
         self.innerWidget = QtGui.QWidget()
         self.innerWidgetLayout = QtGui.QHBoxLayout()
         self.innerWidget.setLayout(self.innerWidgetLayout)
-        self.innerWidgetLayout.setContentsMargins(0,0,0,0)
-        self.innerWidgetLayout.setSpacing(0)
+        self.innerWidgetLayout.setContentsMargins(10, 0, 10, 10)
+        self.innerWidgetLayout.setSpacing(10)
         self.innerWidgetLayout.setAlignment(QtCore.Qt.AlignTop)
         # Create list on left side (allow resizing with splitter)
         self.listWidget = QtGui.QWidget()
         self.listWidgetLayout = QtGui.QVBoxLayout()
         self.listWidget.setLayout(self.listWidgetLayout)
         self.listWidget.setMinimumWidth(200)
-        self.listWidget.setMaximumWidth(1000)
+        self.listWidget.setMaximumWidth(2000)
         self.listWidget.setMinimumHeight(400)
-        self.listWidget.setMaximumHeight(1000)
+        self.listWidget.setMaximumHeight(2000)
         self.listWidget.setSizePolicy(QtGui.QSizePolicy.Expanding, QtGui.QSizePolicy.Expanding)
         self.listWidgetLayout.setContentsMargins(0,0,0,0)
         self.listWidgetLayout.setSpacing(0)
@@ -181,6 +275,10 @@ class AssetBrowserWindow(QtGui.QWidget):
         self.gridWidget = QtGui.QWidget()
         self.gridWidgetLayout = QtGui.QVBoxLayout()
         self.gridWidget.setLayout(self.gridWidgetLayout)
+        self.gridWidget.setMinimumWidth(200)
+        self.gridWidget.setMaximumWidth(2000)
+        self.gridWidget.setMinimumHeight(400)
+        self.gridWidget.setMaximumHeight(2000)
         self.gridWidget.setSizePolicy(QtGui.QSizePolicy.Expanding, QtGui.QSizePolicy.Expanding)
         self.gridWidgetLayout.setContentsMargins(0,0,0,0)
         self.gridWidgetLayout.setSpacing(0)
@@ -227,36 +325,61 @@ class AssetBrowserWindow(QtGui.QWidget):
         self.splitter.addWidget(self.listWidget)
         self.splitter.addWidget(self.gridWidget)
         self.splitter.setSizes([200, 400])
+        self.splitter.setStretchFactor(0, 0)
+        self.splitter.setStretchFactor(1, 1)
         # Add to inner widget
         self.innerWidgetLayout.addWidget(self.splitter)
         # Set self (outer) widget (stores inner widget and toolbar)
         self.outerWidgetLayout = QtGui.QVBoxLayout()
-        self.setLayout(self.outerWidgetLayout)
         self.outerWidgetLayout.setContentsMargins(0,0,0,0)
         self.outerWidgetLayout.setSpacing(0)
         self.outerWidgetLayout.setAlignment(QtCore.Qt.AlignTop)
         # Create toolbar
-        self.toolbar = QtGui.QToolBar()
-        self.toolbar.setMovable(False)
-        self.toolbar.setFloatable(False)
-        self.toolbar.setToolButtonStyle(QtCore.Qt.ToolButtonTextBesideIcon)
-        self.toolbar.setIconSize(QtCore.QSize(16, 16))
-        self.toolbar.setContentsMargins(0,0,0,0)
-        self.toolbar.setOrientation(QtCore.Qt.Horizontal)
-        self.toolbar.setAllowedAreas(QtCore.Qt.TopToolBarArea)
-        self.toolbar.setContextMenuPolicy(QtCore.Qt.PreventContextMenu)
-        self.toolbar.setStyleSheet("QToolBar { border: 0px; }")
+        self.toolbar = QtGui.QWidget()
         self.toolbarLayout = QtGui.QHBoxLayout()
-        self.toolbarLayout.setContentsMargins(0,0,0,0)
-        self.toolbarLayout.setSpacing(0)
+        self.toolbarLayout.setContentsMargins(10,10,10,10)
+        self.toolbarLayout.setSpacing(10)
         self.toolbarLayout.setAlignment(QtCore.Qt.AlignLeft)
+        # Create filter list button
+        self.filterListButton = QtGui.QToolButton(self.toolbar)
+        self.filterListButton.setText("Filters (%d)" % len(self.filterTypes))
+        self.filterListButton.setToolButtonStyle(QtCore.Qt.ToolButtonTextBesideIcon)
+        self.filterListButton.setPopupMode(QtGui.QToolButton.InstantPopup)
+        self.filterListButtonMenu = QtGui.QMenu()
+        self.filterListButton.setMenu(self.filterListButtonMenu)
+        self.filterListButtonMenu.aboutToShow.connect(self.filterListButtonMenuAboutToShow)
+        self.toolbarLayout.addWidget(self.filterListButton)
+        # Create mod list button
+        self.modListButton = QtGui.QToolButton(self.toolbar)
+        self.modListButton.setText("Mods (%d)" % len(self.modTypes))
+        self.modListButton.setToolButtonStyle(QtCore.Qt.ToolButtonTextBesideIcon)
+        self.modListButton.setPopupMode(QtGui.QToolButton.InstantPopup)
+        self.modListButtonMenu = QtGui.QMenu()
+        self.modListButton.setMenu(self.modListButtonMenu)
+        self.modListButtonMenu.aboutToShow.connect(self.modListButtonMenuAboutToShow)
+        self.toolbarLayout.addWidget(self.modListButton)
+        # Create search box
+        self.searchBox = QtGui.QLineEdit(self.toolbar)
+        self.searchBox.setPlaceholderText("Search")
+        self.searchBox.textChanged.connect(self.searchBoxTextChanged)
+        self.toolbarLayout.addWidget(self.searchBox)
+        # Create refresh button
+        self.refreshButton = QtGui.QToolButton(self.toolbar)
+        self.refreshButton.setText("Refresh")
+        self.refreshButton.setToolButtonStyle(QtCore.Qt.ToolButtonTextBesideIcon)
+        self.refreshButton.clicked.connect(self.refreshButtonClicked)
+        self.toolbarLayout.addWidget(self.refreshButton)
+        # Create spacer
+        self.toolbarSpacer = QtGui.QSpacerItem(0, 0, QtGui.QSizePolicy.Expanding, QtGui.QSizePolicy.Minimum)
+        self.toolbarLayout.addItem(self.toolbarSpacer)
+        # Set toolbar layout
         self.toolbar.setLayout(self.toolbarLayout)
-        # Create toolbar buttons
-        # TODO: Add buttons to toolbar
         # Add toolbar to outer widget
         self.outerWidgetLayout.addWidget(self.toolbar)
         # Add inner widget to outer widget
         self.outerWidgetLayout.addWidget(self.innerWidget)
+        # Set layout
+        self.setLayout(self.outerWidgetLayout)
         # DEBUG: Add 10 controls to each list to test
         #for i in range(10):
         #    item = QtGui.QListWidgetItem()
@@ -272,12 +395,121 @@ class AssetBrowserWindow(QtGui.QWidget):
             os.makedirs(assetBrowser_modPath)
         #self.recursiveScan(".") # game root
         # Get folders in .
+        #for item in os.listdir("."):
+            #fullpath = os.path.join(".", item)
+            #if os.path.isdir(fullpath):
+                #self.recursiveScan(fullpath) # Add mod folder
+        # Sort alphabetically
+        self.list.sortItems(0, QtCore.Qt.AscendingOrder)
+        # Check version
+        self.checkVersion()
+        # Update tags
+        self.loadAssetTags()
+        # Update list for tags
+        self.addTagsToList()
+        # Update list
+        #self.recursiveUpdateList()
+        # Add dummy root item
+        dummy = QtGui.QTreeWidgetItem()
+        dummy.setText(0, "Root (Click refresh to populate)")
+        dummy.setIcon(0, QtGui.QPixmap.fromImage(QtGui.QImage(self.assetIcons_Small["folder"])))
+        self.list.addTopLevelItem(dummy)
+        # Expand top level items
+        for i in range(self.list.topLevelItemCount()):
+            self.list.topLevelItem(i).setExpanded(True)
+        # Click on first item
+        self.list.setCurrentItem(self.list.topLevelItem(0))
+        self.listItemClicked(self.list.topLevelItem(0))
+
+    def populateDefaultFilterTypes(self):
+        self.filterTypes = []
+        for assetType in self.assetTypeBaseNames:
+            self.filterTypes.append(assetType)
+
+    def filterListButtonMenuAboutToShow(self):
+        # Clear menu
+        self.filterListButtonMenu.clear()
+        # Add filter types
+        for assetType in self.assetTypeBaseNames:
+            action = QtGui.QAction(assetType, self.filterListButtonMenu)
+            action.setCheckable(True)
+            action.setChecked(assetType in self.filterTypes)
+            action.setIcon(QtGui.QIcon(self.assetIcons_Small[assetType]))
+            action.triggered.connect(self.filterListButtonMenuActionTriggered)
+            self.filterListButtonMenu.addAction(action)
+
+    def modListButtonMenuAboutToShow(self):
+        # Clear menu
+        self.modListButtonMenu.clear()
+        # Add mod types
+        for modType in self.mods:
+            action = QtGui.QAction(modType, self.modListButtonMenu)
+            action.setCheckable(True)
+            action.setChecked(modType in self.modTypes)
+            action.triggered.connect(self.modListButtonMenuActionTriggered)
+            self.modListButtonMenu.addAction(action)
+
+    def modListButtonMenuActionTriggered(self):
+        # Update mod types
+        self.modTypes = []
+        for action in self.modListButtonMenu.actions():
+            if action.isChecked():
+                self.modTypes.append(action.text())
+        # Update mod list button text
+        self.modListButton.setText("Mods (%d)" % len(self.modTypes))
+        searchText = self.searchBox.text()
+        if searchText != "":
+            self.searchBoxTextChanged(searchText)
+        self.listItemClicked(self.list.currentItem())
+
+    def filterListButtonMenuActionTriggered(self):
+        # Update filter types
+        self.filterTypes = []
+        for action in self.filterListButtonMenu.actions():
+            if action.isChecked():
+                self.filterTypes.append(action.text())
+        # Update filter list button text
+        self.filterListButton.setText("Filters (%d)" % len(self.filterTypes))
+        searchText = self.searchBox.text()
+        if searchText != "":
+            self.searchBoxTextChanged(searchText)
+        self.listItemClicked(self.list.currentItem())
+
+    def searchBoxTextChanged(self, text):
+        self.gridList.clear()
+        # Disable list if text is not empty
+        if text != "":
+            self.list.setEnabled(False)
+            # Update grid list
+            for assetUuid, asset in self.everyAsset.items():
+                if text.lower() in asset.assetName.lower():
+                    if asset.assetType in self.filterTypes and asset.mod in self.modTypes:
+                        # Add to grid list
+                        item = QtGui.QListWidgetItem()
+                        item.setText(asset.assetName)
+                        item.setData(QtCore.Qt.DecorationRole, QtGui.QImage(self.assetIcons_Large[asset.assetType]))
+                        item.setToolTip(asset.assetPath)
+                        self.gridList.addItem(item)
+        else:
+            self.list.setEnabled(True)
+            # Re-populate grid list
+            self.listItemClicked(self.list.currentItem())
+
+    def refreshButtonClicked(self):
+        # Clear list
+        self.list.clear()
+        # Clear grid
+        self.gridList.clear()
+        # Clear assets
+        self.rootAsset.children = []
+        self.everyAsset = {}
+        # Get folders in .
         for item in os.listdir("."):
             fullpath = os.path.join(".", item)
             if os.path.isdir(fullpath):
                 self.recursiveScan(fullpath) # Add mod folder
-        # Check version
-        self.checkVersion()
+        # Sort alphabetically
+        self.list.sortItems(0, QtCore.Qt.AscendingOrder)
         # Update tags
         self.loadAssetTags()
         # Update list for tags
@@ -291,39 +523,48 @@ class AssetBrowserWindow(QtGui.QWidget):
         self.list.setCurrentItem(self.list.topLevelItem(0))
         self.listItemClicked(self.list.topLevelItem(0))
 
+    def getUUID(self, path):
+        # Get uuid from path
+        uuid = hashlib.md5(path).hexdigest()
+        return uuid
+
     def recursiveScan(self, path, parent=None):
+        times = 50
         # Scan the given path recursively
         for item in os.listdir(path):
             fullpath = os.path.join(path, item)
             assetType = self.getTypeOfAsset(item, fullpath)
+            # Is type filtered?
+            if assetType != "folder" and assetType not in self.filterTypes:
+                continue
             # Don't even parse generic assets
-            if assetType == "generic":
+            #if assetType == "generic":
+                #continue
+            # Make uuid for asset
+            nonModPath = fullpath[fullpath.find("\\")+1:]
+            nonModPath = nonModPath[nonModPath.find("\\")+1:]
+            nonModPath = nonModPath.replace("\\", "/")
+            # Remove .\ from start of path
+            modPath = fullpath.replace("\\", "/")
+            modPath = modPath[modPath.find("/")+1:]
+            # Regex /.* to get the mod name
+            modPath = re.sub("/.*", "", modPath)
+            # Check if in forbiddenMods
+            if modPath.lower() in self.forbiddenMods:
                 continue
-            asset = Asset(assetType, item, fullpath, [])
-            # Does asset already exist in parent?
+            # Is mod filtered?
+            if modPath not in self.modTypes:
+                continue
+            uuid = self.getUUID(nonModPath)
+            asset = Asset(assetType, item, fullpath, modPath, [])
+            # Does asset uuid already exist?
             taken = False
-            if parent:
-                for child in parent.children:
-                    if child.assetName == asset.assetName:
-                        asset = child
-                        taken = True
-                        break
-            else:
-                for child in self.rootAsset.children:
-                    if child.assetName == asset.assetName:
-                        asset = child
-                        taken = True
-                        break
-            # Does the path contain a whitelist entry?
-            whitelistValid = False
-            for whitelist in self.whiteList:
-                if whitelist in fullpath:
-                    whitelistValid = True
+            for uuid2 in self.everyAsset.keys():
+                if uuid2 == uuid:
+                    taken = True
                     break
-            if not whitelistValid:
-                continue
             # Check if forbidden
-            if asset.assetName in self.forbiddenAssets:
+            if nonModPath.lower() in self.forbiddenAssets:
                 continue
             # Only types allowed in root are folders
             if parent == None and assetType != "folder":
@@ -331,13 +572,27 @@ class AssetBrowserWindow(QtGui.QWidget):
             # Add asset to parent
             if not taken:
                 if parent:
-                    parent.children.append(asset)
+                    parent.children.append(uuid)
                 else:
-                    self.rootAsset.children.append(asset)
+                    self.rootAsset.children.append(uuid)
+                # Add to all assets
+                self.everyAsset[uuid] = asset
+            else:
+                # Get existing asset
+                asset = self.getAssetFromUUID(uuid)
             # Check if asset is a folder
             if asset.assetType == "folder":
                 # Scan folder
                 self.recursiveScan(fullpath, asset)
+            times -= 1
+            if times == 0:
+                break
+
+    def getAssetFromUUID(self, uuid):
+        for assetUuid, asset in self.everyAsset.items():
+            if assetUuid == uuid:
+                return asset
+        return None
 
     def recursiveUpdateList(self, assetParent=None, itemParent=None, depth=0):
         if assetParent == None:
@@ -359,20 +614,16 @@ class AssetBrowserWindow(QtGui.QWidget):
         else:
             self.list.addTopLevelItem(item_small)
         # Add children
-        for child in assetParent.children:
+        for childUuid in assetParent.children:
+            child = self.getAssetFromUUID(childUuid)
             self.recursiveUpdateList(child, item_small, depth+1)
     
     def recursiveGetAssetFromPath(self, path, assetParent=None):
-        if assetParent == None:
-            assetParent = self.rootAsset
-        if assetParent.assetPath == path:
-            return assetParent
-        else:
-            for child in assetParent.children:
-                asset = self.recursiveGetAssetFromPath(path, child)
-                if asset:
-                    return asset
-        return None
+        nonModPath = path[path.find("\\")+1:]
+        nonModPath = nonModPath[nonModPath.find("\\")+1:]
+        nonModPath = nonModPath.replace("\\", "/")
+        uuid = self.getUUID(nonModPath)
+        return self.getAssetFromUUID(uuid)
 
     def assetClicked(self, asset):
         # Get base path (remove .\*\*\)
@@ -385,34 +636,25 @@ class AssetBrowserWindow(QtGui.QWidget):
         # Parse \ as /
         basePath = basePath.replace("\\", "/")
         # Parse each asset type
-        if asset.assetType == "map":
-            pass
-        elif asset.assetType == "model":
-            pass
-        elif asset.assetType == "particle":
-            pass
-        elif asset.assetType == "sound":
+        if asset.assetType == "sound":
             # Play sound
             sfm.console("play " + basePath)
 
     def assetDoubleClicked(self, asset):
         # Get base path (remove .\*\*\)
         basePath = asset.assetPath
-        # TODO: What about text?
+        # Remove .\ from path
+        rootPath = basePath[2:]
+        # Add cwd to path
+        rootPath = os.path.join(os.getcwd(), basePath)
         # SFM sessions don't have a base path and materials/textures need cwd
-        if asset.assetType != "sfmsession" and asset.assetType != "material" and asset.assetType != "texture":
+        basePath = basePath[basePath.find("\\")+1:]
+        basePath = basePath[basePath.find("\\")+1:]
+        # Models use a prefix, others don't
+        if asset.assetType != "model":
             basePath = basePath[basePath.find("\\")+1:]
-            basePath = basePath[basePath.find("\\")+1:]
-            # Models use a prefix, others don't
-            if asset.assetType != "model":
-                basePath = basePath[basePath.find("\\")+1:]
-                # Parse \ as /
-                basePath = basePath.replace("\\", "/")
-        else:
-            # Remove .\ from path
-            basePath = basePath[2:]
-            # Add cwd to path
-            basePath = os.path.join(os.getcwd(), basePath)
+            # Parse \ as /
+            basePath = basePath.replace("\\", "/")
         # Parse each asset type
         if asset.assetType == "map":
             # Load map
@@ -426,35 +668,61 @@ class AssetBrowserWindow(QtGui.QWidget):
             # Enable undo system
             dm.SetUndoEnabled(True)
         elif asset.assetType == "model":
-            # Show information on how to import a model
-            QtGui.QMessageBox.information(self, "Asset Browser: Model Import", "To import models, right click and check the \"Model Stack\" tag, then run\nthe \"asset_browser_import_models\" rig script from any animation set.")
+            # Show information on how to import a model on first double click
+            if not self.firstDoubleClick:
+                QtGui.QMessageBox.information(self, "Asset Browser: Model Import", "To import models, right click and check the \"Model Stack\" tag, then run\nthe \"asset_browser_import_models\" rig script from any animation set.")
+                self.firstDoubleClick = True
+            # Open in HLMV
+            hlmv = os.getcwd() + "\\bin\\hlmv.exe"
+            if os.path.exists(hlmv):
+                subprocess.Popen([hlmv, rootPath])
+            else:
+                os.startfile(rootPath)
         elif asset.assetType == "sfmsession":
             # Close current session and open new one
             sfmApp.CloseDocument(forceSilent=False)
-            sfmApp.OpenDocument(basePath)
-        elif asset.assetType == "material" or asset.assetType == "texture":
+            sfmApp.OpenDocument(rootPath)
+        elif asset.assetType == "folder":
+            # Double click in list
+            listItem = self.list.currentItem()
+            if listItem:
+                # Expand if collapsed
+                if not listItem.isExpanded():
+                    listItem.setExpanded(True)
+                # Find item with same name
+                for i in range(listItem.childCount()):
+                    child = listItem.child(i)
+                    # Regex to get base name
+                    baseName = re.sub("/.*", "", asset.assetName)
+                    text = child.text(0)
+                    # Remove depth from text
+                    while text[0] == "-":
+                        text = text[2:]
+                    # Compare
+                    if text == baseName:
+                        self.list.setCurrentItem(child)
+                        self.listItemClicked(child)
+                        break
+        else:
             # Open in external editor (vtfedit? vscode?)
-            os.startfile(basePath)
+            os.startfile(rootPath)
 
     def listItemClicked(self, item):
         # Get asset from path
         asset = self.recursiveGetAssetFromPath(item.toolTip(0))
         if asset:
-            # Is it a folder?
-            if asset.assetType != "folder":
-                return
             # Reset grid icons and add new ones
             self.gridList.clear()
-            # Add children
-            for child in asset.children:
-                # Don't add folders
-                if child.assetType == "folder":
-                    continue
-                item = QtGui.QListWidgetItem()
-                item.setText(child.assetName)
-                item.setData(QtCore.Qt.DecorationRole, QtGui.QImage(self.assetIcons_Large[child.assetType]))
-                item.setToolTip(child.assetPath)
-                self.gridList.addItem(item)
+            for childUuid in asset.children:
+                child = self.getAssetFromUUID(childUuid)
+                if child:
+                    # Is asset filtered?
+                    if child.assetType in self.filterTypes and child.mod in self.modTypes:
+                        item = QtGui.QListWidgetItem()
+                        item.setText(child.assetName)
+                        item.setData(QtCore.Qt.DecorationRole, QtGui.QImage(self.assetIcons_Large[child.assetType]))
+                        item.setToolTip(child.assetPath)
+                        self.gridList.addItem(item)
         else:
             # Presume tag was clicked
             tagValue = item.toolTip(0)
@@ -463,11 +731,13 @@ class AssetBrowserWindow(QtGui.QWidget):
             for tag in self.tags:
                 if tag.tagValue == tagValue:
                     for asset in tag.children:
-                        item = QtGui.QListWidgetItem()
-                        item.setText(asset.assetName)
-                        item.setData(QtCore.Qt.DecorationRole, QtGui.QImage(self.assetIcons_Large[asset.assetType]))
-                        item.setToolTip(asset.assetPath)
-                        self.gridList.addItem(item)
+                        # Is asset filtered?
+                        if asset.assetType in self.assetTypeBaseNames:
+                            item = QtGui.QListWidgetItem()
+                            item.setText(asset.assetName)
+                            item.setData(QtCore.Qt.DecorationRole, QtGui.QImage(self.assetIcons_Large[asset.assetType]))
+                            item.setToolTip(asset.assetPath)
+                            self.gridList.addItem(item)
                     break
     
     def gridItemClicked(self, item):
@@ -499,6 +769,10 @@ class AssetBrowserWindow(QtGui.QWidget):
         action = QtGui.QAction("Copy path", self)
         action.triggered.connect(lambda: self.copyPath(asset))
         menu.addAction(action)
+        # Add copy relative path action
+        action = QtGui.QAction("Copy relative path", self)
+        action.triggered.connect(lambda: self.copyRelativePath(asset))
+        menu.addAction(action)
         # Add open folder action
         action = QtGui.QAction("Open folder", self)
         action.triggered.connect(lambda: self.openFolder(asset))
@@ -520,6 +794,10 @@ class AssetBrowserWindow(QtGui.QWidget):
                     break
             action.triggered.connect(lambda tagValue=tag.tagValue: self.tagAsset(asset, tagValue))
             menu.addAction(action)
+        # Add mod text
+        action = QtGui.QAction("Mod: " + asset.mod, self)
+        action.setEnabled(False)
+        menu.addAction(action)
         # Show menu
         menu.exec_(QtGui.QCursor.pos())
 
@@ -528,6 +806,23 @@ class AssetBrowserWindow(QtGui.QWidget):
         path = asset.assetPath[2:]
         # Add cwd to path
         path = os.path.join(os.getcwd(), path)
+        # Copy path to clipboard
+        clipboard = QtGui.QApplication.clipboard()
+        clipboard.setText(path)
+
+    def copyRelativePath(self, asset):
+        # Remove .\ from path
+        path = asset.assetPath[2:]
+        # Remove mod from path
+        path = path[path.find("\\"):]
+        # Trim leading /
+        path = path[1:]
+        # Remove first directory from path
+        path = path[path.find("\\"):]
+        # Trim leading /
+        path = path[1:]
+        # Replace \ with /
+        path = path.replace("\\", "/")
         # Copy path to clipboard
         clipboard = QtGui.QApplication.clipboard()
         clipboard.setText(path)
@@ -572,14 +867,16 @@ class AssetBrowserWindow(QtGui.QWidget):
                 assetBrowser_globalModelStack.append(baseName)
         # Save tags
         self.saveAssetTags()
-        # Reload list
-        self.list.setCurrentItem(self.list.currentItem())
-        self.listItemClicked(self.list.currentItem())
+        # Reload list if search is empty
+        if self.searchBox.text() == "":
+            self.list.setCurrentItem(self.list.currentItem())
+            self.listItemClicked(self.list.currentItem())
     
     def gridItemDoubleClicked(self, item):
         # Get asset from path
         asset = self.recursiveGetAssetFromPath(item.toolTip())
-        self.assetDoubleClicked(asset)
+        if asset:
+            self.assetDoubleClicked(asset)
         
     # Load asset tags from json file
     def loadAssetTags(self):
@@ -589,7 +886,7 @@ class AssetBrowserWindow(QtGui.QWidget):
             # Create file
             f = open(assetBrowser_modPath + "/assetTags.json", "w")
             # Create json from defaultTags
-            # HACK: This doesn't work anymore, so we're writing it directly now.
+            # HACK: This doesn't work anymore, so we're writing it directly for now.
             #preJson = {}
             #preJson["tags"] = []
             #for tag in self.defaultTags:
@@ -617,6 +914,8 @@ class AssetBrowserWindow(QtGui.QWidget):
             data = json.load(f)
             # Close file
             f.close()
+            # Clear tags
+            self.tags = []
             # Add tag to "tags" list
             for tag in data["tags"]:
                 # Get assets from children
