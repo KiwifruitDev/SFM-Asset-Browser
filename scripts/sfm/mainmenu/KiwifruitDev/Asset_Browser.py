@@ -198,6 +198,7 @@ class AssetBrowserWindow(QtGui.QWidget):
     tags = []
 
     filterTypes = [
+        "folder",
         "map",
         "model",
         "particles",
@@ -345,6 +346,7 @@ class AssetBrowserWindow(QtGui.QWidget):
         self.filterListButton.setText("Filters (%d)" % len(self.filterTypes))
         self.filterListButton.setToolButtonStyle(QtCore.Qt.ToolButtonTextBesideIcon)
         self.filterListButton.setPopupMode(QtGui.QToolButton.InstantPopup)
+        self.filterListButton.setToolTip("These are the different types of files. Only add what you think you need.")
         self.filterListButtonMenu = QtGui.QMenu()
         self.filterListButton.setMenu(self.filterListButtonMenu)
         self.filterListButtonMenu.aboutToShow.connect(self.filterListButtonMenuAboutToShow)
@@ -354,6 +356,7 @@ class AssetBrowserWindow(QtGui.QWidget):
         self.modListButton.setText("Mods (%d)" % len(self.modTypes))
         self.modListButton.setToolButtonStyle(QtCore.Qt.ToolButtonTextBesideIcon)
         self.modListButton.setPopupMode(QtGui.QToolButton.InstantPopup)
+        self.modListButton.setToolTip("Mods are search path folders. Only add what you think you need.")
         self.modListButtonMenu = QtGui.QMenu()
         self.modListButton.setMenu(self.modListButtonMenu)
         self.modListButtonMenu.aboutToShow.connect(self.modListButtonMenuAboutToShow)
@@ -361,14 +364,26 @@ class AssetBrowserWindow(QtGui.QWidget):
         # Create search box
         self.searchBox = QtGui.QLineEdit(self.toolbar)
         self.searchBox.setPlaceholderText("Search")
+        self.searchBox.setToolTip("Search for a file.")
         self.searchBox.textChanged.connect(self.searchBoxTextChanged)
         self.toolbarLayout.addWidget(self.searchBox)
         # Create refresh button
         self.refreshButton = QtGui.QToolButton(self.toolbar)
         self.refreshButton.setText("Refresh")
         self.refreshButton.setToolButtonStyle(QtCore.Qt.ToolButtonTextBesideIcon)
+        self.refreshButton.setToolTip("Refresh the list of files. This will cause SFM to freeze.")
         self.refreshButton.clicked.connect(self.refreshButtonClicked)
         self.toolbarLayout.addWidget(self.refreshButton)
+        # Create index amount integer box label
+        self.indexAmountBoxLabel = QtGui.QLabel(self.toolbar)
+        self.indexAmountBoxLabel.setText("Index Amount:")
+        self.toolbarLayout.addWidget(self.indexAmountBoxLabel)
+        # Create index amount integer box
+        self.indexAmountBox = QtGui.QSpinBox(self.toolbar)
+        self.indexAmountBox.setRange(1, 1024)
+        self.indexAmountBox.setValue(1024)
+        self.indexAmountBox.setToolTip("Recursive index amount. Setting this value too high with too many filters/mods selected may cause SFM to freeze indefinitely.")
+        self.toolbarLayout.addWidget(self.indexAmountBox)
         # Create spacer
         self.toolbarSpacer = QtGui.QSpacerItem(0, 0, QtGui.QSizePolicy.Expanding, QtGui.QSizePolicy.Minimum)
         self.toolbarLayout.addItem(self.toolbarSpacer)
@@ -529,7 +544,7 @@ class AssetBrowserWindow(QtGui.QWidget):
         return uuid
 
     def recursiveScan(self, path, parent=None):
-        times = 50
+        times = self.indexAmountBox.value()
         # Scan the given path recursively
         for item in os.listdir(path):
             fullpath = os.path.join(path, item)

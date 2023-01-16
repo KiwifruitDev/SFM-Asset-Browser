@@ -6,6 +6,8 @@ This is a simple asset browser for Source Filmmaker.
 
 ## Features
 
+- Search
+- Filter by type and mod
 - Browse folders in a tree view
 - Double click on folders to expand them
 - User-defined asset tags with custom icons (modifiable via JSON)
