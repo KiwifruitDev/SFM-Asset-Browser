@@ -486,6 +486,8 @@ class AssetBrowserWindow(QtGui.QWidget):
         settings["ignoreTypes"] = self.ignoreTypes
         settings["modTypes"] = self.modTypes
         settings["mods"] = self.mods
+        settings["maxDepth"] = self.indexAmountBox.value()
+        settings["search"] = self.searchBox.text()
         # Serialize root asset
         rootAsset = {}
         rootAsset["assetName"] = self.rootAsset.assetName
@@ -524,6 +526,10 @@ class AssetBrowserWindow(QtGui.QWidget):
             self.ignoreTypes = data["settings"]["ignoreTypes"]
             self.modTypes = data["settings"]["modTypes"]
             self.mods = data["settings"]["mods"]
+            if "maxDepth" in data["settings"]:
+                self.indexAmountBox.setValue(data["settings"]["maxDepth"])
+            if "search" in data["settings"]:
+                self.searchBox.setText(data["settings"]["search"])
             # Set button text
             self.ignoreButton.setText("Ignore (%d)" % len(self.ignorables))
             self.modListButton.setText("Mods (%d)" % len(self.mods))
@@ -545,6 +551,12 @@ class AssetBrowserWindow(QtGui.QWidget):
             # Expand top level items
             for i in range(self.list.topLevelItemCount()):
                 self.list.topLevelItem(i).setExpanded(True)
+            # Click on first item
+            self.list.setCurrentItem(self.list.topLevelItem(0))
+            self.listItemClicked(self.list.topLevelItem(0))
+            # If search box is not empty, search
+            if self.searchBox.text() != "":
+                self.searchBoxTextChanged(self.searchBox.text())
             
     def ignoreButtonMenuAboutToShow(self):
         # Clear menu
@@ -949,6 +961,8 @@ class AssetBrowserWindow(QtGui.QWidget):
             os.startfile(rootPath)
 
     def listItemClicked(self, item):
+        if item is None:
+            return
         self.currentFolder = item.toolTip(0)
         asset = None
         # Get asset from path
