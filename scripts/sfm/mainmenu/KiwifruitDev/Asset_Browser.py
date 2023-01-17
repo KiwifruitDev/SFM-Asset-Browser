@@ -416,13 +416,13 @@ class AssetBrowserWindow(QtGui.QWidget):
         self.saveButton = QtGui.QToolButton(self.toolbar)
         self.saveButton.setText("Save")
         self.saveButton.setToolButtonStyle(QtCore.Qt.ToolButtonTextBesideIcon)
-        self.saveButton.setToolTip("Save settings and current assets loaded to a file.")
+        self.saveButton.setToolTip("Save settings and current index hive to a file.")
         self.saveButton.clicked.connect(self.saveButtonClicked)
         self.toolbarLayout.addWidget(self.saveButton)
         self.loadButton = QtGui.QToolButton(self.toolbar)
         self.loadButton.setText("Load")
         self.loadButton.setToolButtonStyle(QtCore.Qt.ToolButtonTextBesideIcon)
-        self.loadButton.setToolTip("Load settings and assets from a file.")
+        self.loadButton.setToolTip("Load settings and index hive from a file.")
         self.loadButton.clicked.connect(self.loadButtonClicked)
         self.toolbarLayout.addWidget(self.loadButton)
         # Create status text
@@ -510,14 +510,14 @@ class AssetBrowserWindow(QtGui.QWidget):
         data["rootAsset"] = rootAsset
         data["assets"] = assets
         # Ask where to save
-        filename, type = QtGui.QFileDialog.getSaveFileName(self, "Save asset browser data", assetBrowser_modPath, "Asset Browser Data (*.json)")
+        filename, type = QtGui.QFileDialog.getSaveFileName(self, "Save index hive to a file", assetBrowser_modPath, "JavaScript Object Notation (*.json)")
         if filename:
             with open(filename, "w") as f:
                 json.dump(data, f, indent=4)
 
     def loadButtonClicked(self):
         # Ask where to load from
-        filename, type = QtGui.QFileDialog.getOpenFileName(self, "Load asset browser data", assetBrowser_modPath, "Asset Browser Data (*.json)")
+        filename, type = QtGui.QFileDialog.getOpenFileName(self, "Load index hive from a file", assetBrowser_modPath, "JavaScript Object Notation (*.json)")
         if filename:
             with open(filename, "r") as f:
                 data = json.load(f)
@@ -526,6 +526,10 @@ class AssetBrowserWindow(QtGui.QWidget):
             self.ignoreTypes = data["settings"]["ignoreTypes"]
             self.modTypes = data["settings"]["modTypes"]
             self.mods = data["settings"]["mods"]
+            # Set button text
+            self.ignoreButton.setText("Ignore (%d)" % len(self.ignorables))
+            self.modListButton.setText("Mods (%d)" % len(self.mods))
+            self.filterListButton.setText("Filters (%d)" % len(self.ignoreTypes))
             # Deserialize root asset
             self.rootAsset = Asset(data["rootAsset"]["assetType"], data["rootAsset"]["assetName"], data["rootAsset"]["assetPath"], data["rootAsset"]["mod"], data["rootAsset"]["children"])
             # Deserialize assets
@@ -904,7 +908,7 @@ class AssetBrowserWindow(QtGui.QWidget):
         elif asset.assetType == "model":
             # Show information on how to import a model on first double click
             if not self.firstDoubleClick:
-                QtGui.QMessageBox.information(self, "Asset Browser: Model Import", "To import models, right click and check the \"Model Stack\" tag, then run\nthe \"asset_browser_import_models\" rig script from any animation set.")
+                QtGui.QMessageBox.information(self, "Asset Browser: Model Import", "Due to an SFM limitation, models cannot be imported directly.\n\nTo import models, right click and check the \"Model Stack\" tag, then run\nthe \"asset_browser_import_models\" rig script from any animation set.\n\nModels can be imported in bulk, even outside of filtering.\n\nThis message will not appear again, models will open in HLMV instead.")
                 self.firstDoubleClick = True
             # Open in HLMV
             hlmv = os.getcwd() + "\\bin\\hlmv.exe"
@@ -970,13 +974,11 @@ class AssetBrowserWindow(QtGui.QWidget):
             for tag in self.tags:
                 if tag.tagValue == item.toolTip(0):
                     for asset in tag.children:
-                        # Is asset filtered?
-                        if asset.assetType in self.filterTypes and asset.mod in self.modTypes:
-                            item = QtGui.QListWidgetItem()
-                            item.setText(asset.assetName)
-                            item.setData(QtCore.Qt.DecorationRole, QtGui.QImage(self.assetIcons_Large[asset.assetType]))
-                            item.setToolTip(asset.assetPath)
-                            self.gridList.addItem(item)
+                        item = QtGui.QListWidgetItem()
+                        item.setText(asset.assetName)
+                        item.setData(QtCore.Qt.DecorationRole, QtGui.QImage(self.assetIcons_Large[asset.assetType]))
+                        item.setToolTip(asset.assetPath)
+                        self.gridList.addItem(item)
                     break
     
     def gridItemClicked(self, item):
@@ -992,55 +994,57 @@ class AssetBrowserWindow(QtGui.QWidget):
             return
         # Get asset from path
         asset = self.recursiveGetAssetFromPath(item.toolTip())
-        # Create context menu
-        menu = QtGui.QMenu()
-        # Add actions text
-        action = QtGui.QAction("Asset:", self)
-        action.setEnabled(False)
-        menu.addAction(action)
-        # Add preview action
-        #action = QtGui.QAction("Preview", self)
-        #action.triggered.connect(lambda: self.assetClicked(asset))
-        #menu.addAction(action)
-        # Add import action
-        #action = QtGui.QAction("Import", self)
-        #action.triggered.connect(lambda: self.assetDoubleClicked(asset))
-        #menu.addAction(action)
-        # Add copy path action
-        action = QtGui.QAction("Copy path", self)
-        action.triggered.connect(lambda: self.copyPath(asset))
-        menu.addAction(action)
-        # Add copy relative path action
-        action = QtGui.QAction("Copy relative path", self)
-        action.triggered.connect(lambda: self.copyRelativePath(asset))
-        menu.addAction(action)
-        # Add open folder action
-        action = QtGui.QAction("Open folder", self)
-        action.triggered.connect(lambda: self.openFolder(asset))
-        menu.addAction(action)
-        # Add tag text
-        action = QtGui.QAction("Tags:", self)
-        action.setEnabled(False)
-        menu.addAction(action)
-        # Add tag actions
-        for tag in self.tags:
-            # Only add model stack if model
-            if tag.tagValue == "modelstack" and asset.assetType != "model":
-                continue
-            action = QtGui.QAction(tag.tagName, self)
-            action.setCheckable(True)
-            for taggedAsset in tag.children:
-                if taggedAsset.assetPath == asset.assetPath:
-                    action.setChecked(True)
-                    break
-            action.triggered.connect(lambda tagValue=tag.tagValue: self.tagAsset(asset, tagValue))
+        if asset:
+            # Create context menu
+            menu = QtGui.QMenu()
+            # Add actions text
+            action = QtGui.QAction(asset.assetType == "folder" and "Folder:" or "File:", self)
+            action.setEnabled(False)
             menu.addAction(action)
-        # Add mod text
-        action = QtGui.QAction("Mod: " + asset.mod, self)
-        action.setEnabled(False)
-        menu.addAction(action)
-        # Show menu
-        menu.exec_(QtGui.QCursor.pos())
+            # Add preview action
+            #action = QtGui.QAction("Preview", self)
+            #action.triggered.connect(lambda: self.assetClicked(asset))
+            #menu.addAction(action)
+            # Add import action
+            #action = QtGui.QAction("Import", self)
+            #action.triggered.connect(lambda: self.assetDoubleClicked(asset))
+            #menu.addAction(action)
+            # Add copy path action
+            action = QtGui.QAction("Copy path", self)
+            action.triggered.connect(lambda: self.copyPath(asset))
+            menu.addAction(action)
+            # Add copy relative path action
+            action = QtGui.QAction("Copy relative path", self)
+            action.triggered.connect(lambda: self.copyRelativePath(asset))
+            menu.addAction(action)
+            # Add open folder action
+            action = QtGui.QAction("Open folder", self)
+            action.triggered.connect(lambda: self.openFolder(asset))
+            menu.addAction(action)
+            # Add tag text if not a folder
+            if asset.assetType != "folder":
+                action = QtGui.QAction("Tags:", self)
+                action.setEnabled(False)
+                menu.addAction(action)
+                # Add tag actions
+                for tag in self.tags:
+                    # Only add model stack if model
+                    if tag.tagValue == "modelstack" and asset.assetType != "model":
+                        continue
+                    action = QtGui.QAction(tag.tagName, self)
+                    action.setCheckable(True)
+                    for taggedAsset in tag.children:
+                        if taggedAsset.assetPath == asset.assetPath:
+                            action.setChecked(True)
+                            break
+                    action.triggered.connect(lambda tagValue=tag.tagValue: self.tagAsset(asset, tagValue))
+                    menu.addAction(action)
+            # Add mod text
+            action = QtGui.QAction("Mod: " + asset.mod, self)
+            action.setEnabled(False)
+            menu.addAction(action)
+            # Show menu
+            menu.exec_(QtGui.QCursor.pos())
 
     def copyPath(self, asset):
         # Remove .\ from path
@@ -1071,7 +1075,9 @@ class AssetBrowserWindow(QtGui.QWidget):
     def openFolder(self, asset):
         # Get folder path
         folderPath = asset.assetPath
-        folderPath = folderPath[0:folderPath.rfind("\\")]
+        # If asset is not a folder, get containing folder
+        if asset.assetType != "folder":
+            folderPath = folderPath[0:folderPath.rfind("\\")]
         # Open folder
         os.startfile(folderPath)
     
@@ -1149,28 +1155,53 @@ class AssetBrowserWindow(QtGui.QWidget):
                 if f:
                     f.close()
                 QtGui.QMessageBox.critical(self, "Asset Browser: Error", "Error writing to assetTags.json. Asset tags will not be available.\nMaybe try restarting Source Filmmaker? Delete assetTags.json if possible.")
-        try:
-            f = open(assetBrowser_modPath + "/assetTags.json", "r")
-            # Parse json
-            data = json.load(f)
-            # Close file
-            f.close()
-            # Clear tags
-            self.tags = []
-            # Add tag to "tags" list
-            for tag in data["tags"]:
-                # Get assets from children
-                assets = []
-                for child in tag["children"]:
-                    # Replace / with \
-                    child = child.replace("/", "\\")
-                    asset = self.recursiveGetAssetFromPath(child)
-                    if asset:
-                        assets.append(asset)
-                # Add tag
-                self.tags.append(Tag(tag["tagName"], tag["tagValue"], tag["tagImage"], assets))
-        except:
-            QtGui.QMessageBox.critical(self, "Asset Browser: Error", "Error reading assetTags.json. Asset tags will not be available.\nMaybe try restarting Source Filmmaker? Delete assetTags.json if possible.")
+        #try:
+        f = open(assetBrowser_modPath + "/assetTags.json", "r")
+        # Parse json
+        data = json.load(f)
+        # Close file
+        f.close()
+        # Clear tags
+        self.tags = []
+        # Add tag to "tags" list
+        for tag in data["tags"]:
+            # Get assets from children
+            assets = []
+            for child in tag["children"]:
+                # Replace / with \
+                child = child.replace("/", "\\")
+                asset = self.recursiveGetAssetFromPath(child)
+                if not asset:
+                    # Create asset just for tag purposes
+                    cwd = os.getcwd()
+                    # Remove .\\ from path
+                    if child[0:2] == ".\\":
+                        child = child[2:]
+                    # Get asset path
+                    fullPath = os.path.join(cwd, child)
+                    # Get asset name
+                    baseName = fullPath[fullPath.rfind("\\")+1:]
+                    # Get asset type
+                    assetType = self.getTypeOfAsset(baseName, fullPath)
+                    # Make uuid for asset
+                    nonModPath = fullPath[fullPath.find("\\")+1:]
+                    nonModPath = nonModPath[nonModPath.find("\\")+1:]
+                    nonModPath = nonModPath.replace("\\", "/")
+                    modPath = child.replace("\\", "/")
+                    modPath = modPath[modPath.find("/")+1:]
+                    # Regex /.* to get the mod name
+                    modPath = re.sub("/.*", "", modPath)
+                    # Create asset
+                    asset = Asset(assetType, baseName, fullPath, modPath, [])
+                    # Get uuid
+                    uuid = self.getUUID(nonModPath)
+                    # Add asset to self.everyAsset
+                    self.everyAsset[uuid] = asset
+                assets.append(asset)
+            # Add tag
+            self.tags.append(Tag(tag["tagName"], tag["tagValue"], tag["tagImage"], assets))
+        #except:
+            #QtGui.QMessageBox.critical(self, "Asset Browser: Error", "Error reading assetTags.json. Asset tags will not be available.\nMaybe try restarting Source Filmmaker? Delete assetTags.json if possible.")
 
     def addTagsToList(self):
         # Clear model stack
@@ -1289,16 +1320,21 @@ class AssetBrowserWindow(QtGui.QWidget):
         if button.text() == "&Yes":
             # Pull latest release
             self.pullLatestRelease()
+            
 try:
     # Create window if it doesn't exist
     assetBrowser_globalModelStack = []
     globalAssetBrowser = globals().get("assetBrowserWindow")
-    #if globalAssetBrowser is None:
-    assetBrowserWindow=AssetBrowserWindow()
-    sfmApp.RegisterTabWindow("WindowAssetBrowser", "Asset Browser", shiboken.getCppPointer( assetBrowserWindow )[0])
-    sfmApp.ShowTabWindow("WindowAssetBrowser")
-    #else:
-    #QtGui.QMessageBox.warning(None, "Asset Browser: Error", "Asset Browser is already open.")
+    if globalAssetBrowser is None:
+        assetBrowserWindow=AssetBrowserWindow()
+        sfmApp.RegisterTabWindow("WindowAssetBrowser", "Asset Browser", shiboken.getCppPointer( assetBrowserWindow )[0])
+        sfmApp.ShowTabWindow("WindowAssetBrowser")
+    else:
+        dialog = QtGui.QMessageBox.warning(None, "Asset Browser: Error", "Asset Browser is already open.\n\nIf you are a developer, click Yes to forcibly open a new instance.\n\nOtherwise, click No to close this message.", QtGui.QMessageBox.Yes | QtGui.QMessageBox.No, QtGui.QMessageBox.No)
+        if dialog == QtGui.QMessageBox.Yes:
+            assetBrowserWindow=AssetBrowserWindow()
+            sfmApp.RegisterTabWindow("WindowAssetBrowser", "Asset Browser", shiboken.getCppPointer( assetBrowserWindow )[0])
+            sfmApp.ShowTabWindow("WindowAssetBrowser")
 
 except Exception  as e:
     import traceback
