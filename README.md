@@ -31,7 +31,7 @@ I advise you to review the script contents before trusting it.
 
 The asset browser can be opened using the `Scripts` tab > `KiwifruitDev` > `Asset Browser` in SFM.
 
-Here are rundown of the workflow and features of the asset browser.
+Here are some rundowns of the workflow and features of the asset browser.
 
 ### Indexing
 

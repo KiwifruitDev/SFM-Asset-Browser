@@ -372,7 +372,7 @@ class AssetBrowserWindow(QtGui.QWidget):
         # Create index amount integer box
         self.indexAmountBox = QtGui.QSpinBox(self.toolbar)
         self.indexAmountBox.setRange(1, 8192)
-        self.indexAmountBox.setValue(3)
+        self.indexAmountBox.setValue(4)
         self.indexAmountBox.setToolTip("Maximum folder depth. Setting this value too high with too many filters/mods selected will take a LONG time to refresh.")
         self.toolbarLayout.addWidget(self.indexAmountBox)
         # Create filter list button
@@ -405,13 +405,6 @@ class AssetBrowserWindow(QtGui.QWidget):
         self.ignoreButton.setMenu(self.ignoreButtonMenu)
         self.ignoreButtonMenu.aboutToShow.connect(self.ignoreButtonMenuAboutToShow)
         self.toolbarLayout.addWidget(self.ignoreButton)
-        # Create refresh button
-        self.refreshButton = QtGui.QToolButton(self.toolbar)
-        self.refreshButton.setText("Refresh")
-        self.refreshButton.setToolButtonStyle(QtCore.Qt.ToolButtonTextBesideIcon)
-        self.refreshButton.setToolTip("Refresh or cancel refreshing the list of files.")
-        self.refreshButton.clicked.connect(self.refreshButtonClicked)
-        self.toolbarLayout.addWidget(self.refreshButton)
         # Save/load settings button
         self.saveButton = QtGui.QToolButton(self.toolbar)
         self.saveButton.setText("Save")
@@ -425,6 +418,13 @@ class AssetBrowserWindow(QtGui.QWidget):
         self.loadButton.setToolTip("Load settings and index hive from a file.")
         self.loadButton.clicked.connect(self.loadButtonClicked)
         self.toolbarLayout.addWidget(self.loadButton)
+        # Create refresh button
+        self.refreshButton = QtGui.QToolButton(self.toolbar)
+        self.refreshButton.setText("Refresh")
+        self.refreshButton.setToolButtonStyle(QtCore.Qt.ToolButtonTextBesideIcon)
+        self.refreshButton.setToolTip("Refresh or cancel refreshing the index hive.")
+        self.refreshButton.clicked.connect(self.refreshButtonClicked)
+        self.toolbarLayout.addWidget(self.refreshButton)
         # Create status text
         self.statusText = QtGui.QLabel(self.toolbar)
         self.statusText.setText("Ready")
@@ -661,6 +661,8 @@ class AssetBrowserWindow(QtGui.QWidget):
             self.filterListButton.setEnabled(False)
             self.modListButton.setEnabled(False)
             self.indexAmountBox.setEnabled(False)
+            self.saveButton.setEnabled(False)
+            self.loadButton.setEnabled(False)
             # Clear list
             self.list.clear()
             # Clear grid
@@ -691,6 +693,8 @@ class AssetBrowserWindow(QtGui.QWidget):
             self.filterListButton.setEnabled(True)
             self.modListButton.setEnabled(True)
             self.indexAmountBox.setEnabled(True)
+            self.saveButton.setEnabled(True)
+            self.loadButton.setEnabled(True)
 
     def getUUID(self, path):
         # Get uuid from path
@@ -735,20 +739,6 @@ class AssetBrowserWindow(QtGui.QWidget):
                     continue
             uuid = self.getUUID(nonModPath)
             asset = Asset(assetType, item, fullpath, modPath, [])
-            # Update list
-            self.recursiveUpdateList()
-            # Update grid
-            curitem = self.list.currentItem()
-            if curitem is not None:
-                # Get mod path but remove the file name
-                modPathWithoutFile = re.sub("/[^/]*$", "", nonModPath)
-                # Replace / with \ 
-                modPathWithoutFile = modPathWithoutFile.replace("/", "\\")
-                # Add .\modPath
-                modPathWithoutFile = u".\\" + modPath + "\\" + modPathWithoutFile
-                # Check if current folder is the same as the mod path
-                if self.currentFolder == modPathWithoutFile:
-                    self.listItemClicked(curitem)
             # Does asset uuid already exist?
             taken = False
             for uuid2 in self.everyAsset.keys():
@@ -772,9 +762,23 @@ class AssetBrowserWindow(QtGui.QWidget):
             else:
                 # Get existing asset
                 asset = self.getAssetFromUUID(uuid)
+            # Update list
+            self.recursiveUpdateList()
+            # Update grid
+            curitem = self.list.currentItem()
+            if curitem is not None:
+                # Get mod path but remove the file name
+                modPathWithoutFile = re.sub("/[^/]*$", "", nonModPath)
+                # Replace / with \ 
+                modPathWithoutFile = modPathWithoutFile.replace("/", "\\")
+                # Add .\modPath
+                modPathWithoutFile = u".\\" + modPath + "\\" + modPathWithoutFile
+                # Check if current folder is the same as the mod path
+                if self.currentFolder == modPathWithoutFile:
+                    self.listItemClicked(curitem)
             # Check if asset is a folder
             if asset.assetType == "folder":
-                if depth <= self.indexAmountBox.value():
+                if depth <= self.indexAmountBox.value() - 1:
                     # Scan folder
                     self.recursiveScan(fullpath, asset, depth+1)
 
