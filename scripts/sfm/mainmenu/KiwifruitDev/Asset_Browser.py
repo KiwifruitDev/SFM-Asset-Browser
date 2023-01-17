@@ -252,8 +252,6 @@ class AssetBrowserWindow(QtGui.QWidget):
     def getMods(self):
         # Get list of mods
         mods = os.listdir(".")
-        # To lower case
-        mods = [mod.lower() for mod in mods]
         # Remove forbidden mods
         for forbiddenMod in self.forbiddenMods:
             if forbiddenMod in mods:
