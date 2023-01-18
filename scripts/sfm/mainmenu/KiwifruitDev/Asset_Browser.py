@@ -203,17 +203,18 @@ class AssetBrowserWindow(QtGui.QWidget):
         "map",
         "model",
         "particles",
-        "sound",
         "sfmsession",
         "image",
     ]
 
     ignorables = [
         "materials",
+        "sound",
     ]
 
     ignoreTypes = [
         "materials",
+        "sound",
     ]
 
     modTypes = [
@@ -511,20 +512,20 @@ class AssetBrowserWindow(QtGui.QWidget):
         # Save to file
         canSave = self.filename != ""
         if not canSave or saveAs:
-            tempfilename, type = QtGui.QFileDialog.getSaveFileName(self, "Save index hive to a file", assetBrowser_modPath, "JavaScript Object Notation (*.json)")
+            tempfilename, type = QtGui.QFileDialog.getSaveFileName(self, "Save index hive and settings to a file", assetBrowser_modPath, "JavaScript Object Notation (*.json)")
             if tempfilename:
                 self.filename = tempfilename
                 canSave = True
         if canSave:
             with open(self.filename, "w") as f:
                 json.dump(data, f, indent=4)
-        # Set status
-        self.statusText.setText("Saved")
+            # Set status
+            self.statusText.setText("Saved")
 
     def load(self, filename=None, override=False, settingsOnly=False):
         # Ask where to load from
         if not filename:
-            filename, type = QtGui.QFileDialog.getOpenFileName(self, "Load index hive from a file", assetBrowser_modPath, "JavaScript Object Notation (*.json)")
+            filename, type = QtGui.QFileDialog.getOpenFileName(self, "Load index hive or settings from a file", assetBrowser_modPath, "JavaScript Object Notation (*.json)")
         if filename:
             with open(filename, "r") as f:
                 data = json.load(f)
@@ -626,7 +627,7 @@ class AssetBrowserWindow(QtGui.QWidget):
             action.setEnabled(False)
             self.saveButtonMenu.addAction(action)
         # Save
-        action = QtGui.QAction("Save", self.saveButtonMenu)
+        action = QtGui.QAction("Save to current file", self.saveButtonMenu)
         action.triggered.connect(self.save)
         self.saveButtonMenu.addAction(action)
         # Save as
@@ -645,20 +646,19 @@ class AssetBrowserWindow(QtGui.QWidget):
         action = QtGui.QAction("Load and override index...", self.saveButtonMenu)
         action.triggered.connect(lambda: self.load(override=True))
         self.saveButtonMenu.addAction(action)
-        # Reload
-        action = QtGui.QAction("Reload current index", self.saveButtonMenu)
-        action.triggered.connect(lambda: self.load(filename=self.filename, override=True))
-        self.saveButtonMenu.addAction(action)
-        # Settings text
-        action = QtGui.QAction("Settings:", self.saveButtonMenu)
-        action.setEnabled(False)
-        self.saveButtonMenu.addAction(action)
-        # Load settings
         action = QtGui.QAction("Load settings...", self.saveButtonMenu)
         action.triggered.connect(lambda: self.load(settingsOnly=True))
         self.saveButtonMenu.addAction(action)
+        # Reload text
+        action = QtGui.QAction("Reload:", self.saveButtonMenu)
+        action.setEnabled(False)
+        self.saveButtonMenu.addAction(action)
+        # Reload index
+        action = QtGui.QAction("Reload index from current file", self.saveButtonMenu)
+        action.triggered.connect(lambda: self.load(filename=self.filename, override=True))
+        self.saveButtonMenu.addAction(action)
         # Reload settings
-        action = QtGui.QAction("Reload settings", self.saveButtonMenu)
+        action = QtGui.QAction("Reload settings from current file", self.saveButtonMenu)
         action.triggered.connect(lambda: self.load(settingsOnly=True, filename=self.filename))
         self.saveButtonMenu.addAction(action)
 
@@ -903,6 +903,9 @@ class AssetBrowserWindow(QtGui.QWidget):
     def recursiveUpdateList(self, assetParent=None, itemParent=None, depth=0):
         if assetParent == None:
             assetParent = self.rootAsset
+        # Is this asset ignored?
+        if assetParent.assetName.lower() in self.ignoreTypes:
+            return
         depthText = ""
         for i in range(depth):
             depthText += "- "
