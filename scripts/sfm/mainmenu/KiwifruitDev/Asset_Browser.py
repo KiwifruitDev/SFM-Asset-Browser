@@ -230,6 +230,8 @@ class AssetBrowserWindow(QtGui.QWidget):
 
     refreshActive = False
 
+    filename = ""
+
     defaultTags = [
         Tag("Favorites", "favorites", assetBrowser_modPath + "/images/assettags/favorites_sm.png", []),
         Tag("Red", "red", assetBrowser_modPath + "/images/assettags/red_sm.png", []),
@@ -403,19 +405,16 @@ class AssetBrowserWindow(QtGui.QWidget):
         self.ignoreButton.setMenu(self.ignoreButtonMenu)
         self.ignoreButtonMenu.aboutToShow.connect(self.ignoreButtonMenuAboutToShow)
         self.toolbarLayout.addWidget(self.ignoreButton)
-        # Save/load settings button
+        # File button
         self.saveButton = QtGui.QToolButton(self.toolbar)
-        self.saveButton.setText("Save")
+        self.saveButton.setText("File Options")
         self.saveButton.setToolButtonStyle(QtCore.Qt.ToolButtonTextBesideIcon)
-        self.saveButton.setToolTip("Save settings and current index hive to a file.")
-        self.saveButton.clicked.connect(self.saveButtonClicked)
+        self.saveButton.setPopupMode(QtGui.QToolButton.InstantPopup)
+        self.saveButton.setToolTip("Save/load settings or current index hive to a file.")
+        self.saveButtonMenu = QtGui.QMenu()
+        self.saveButton.setMenu(self.saveButtonMenu)
+        self.saveButtonMenu.aboutToShow.connect(self.saveButtonMenuAboutToShow)
         self.toolbarLayout.addWidget(self.saveButton)
-        self.loadButton = QtGui.QToolButton(self.toolbar)
-        self.loadButton.setText("Load")
-        self.loadButton.setToolButtonStyle(QtCore.Qt.ToolButtonTextBesideIcon)
-        self.loadButton.setToolTip("Load settings and index hive from a file.")
-        self.loadButton.clicked.connect(self.loadButtonClicked)
-        self.toolbarLayout.addWidget(self.loadButton)
         # Create refresh button
         self.refreshButton = QtGui.QToolButton(self.toolbar)
         self.refreshButton.setText("Refresh")
@@ -478,8 +477,8 @@ class AssetBrowserWindow(QtGui.QWidget):
         # Click on first item
         self.list.setCurrentItem(self.list.topLevelItem(0))
         self.listItemClicked(self.list.topLevelItem(0))
-
-    def saveButtonClicked(self):
+    
+    def save(self, saveAs=False):
         # Serialize settings
         settings = {}
         settings["ignorables"] = self.ignorables
@@ -509,55 +508,160 @@ class AssetBrowserWindow(QtGui.QWidget):
         data["settings"] = settings
         data["rootAsset"] = rootAsset
         data["assets"] = assets
-        # Ask where to save
-        filename, type = QtGui.QFileDialog.getSaveFileName(self, "Save index hive to a file", assetBrowser_modPath, "JavaScript Object Notation (*.json)")
-        if filename:
-            with open(filename, "w") as f:
+        # Save to file
+        canSave = self.filename != ""
+        if not canSave or saveAs:
+            tempfilename, type = QtGui.QFileDialog.getSaveFileName(self, "Save index hive to a file", assetBrowser_modPath, "JavaScript Object Notation (*.json)")
+            if tempfilename:
+                self.filename = tempfilename
+                canSave = True
+        if canSave:
+            with open(self.filename, "w") as f:
                 json.dump(data, f, indent=4)
+        # Set status
+        self.statusText.setText("Saved")
 
-    def loadButtonClicked(self):
+    def load(self, filename=None, override=False, settingsOnly=False):
         # Ask where to load from
-        filename, type = QtGui.QFileDialog.getOpenFileName(self, "Load index hive from a file", assetBrowser_modPath, "JavaScript Object Notation (*.json)")
+        if not filename:
+            filename, type = QtGui.QFileDialog.getOpenFileName(self, "Load index hive from a file", assetBrowser_modPath, "JavaScript Object Notation (*.json)")
         if filename:
             with open(filename, "r") as f:
                 data = json.load(f)
-            # Deserialize settings
-            self.ignorables = data["settings"]["ignorables"]
-            self.ignoreTypes = data["settings"]["ignoreTypes"]
-            self.modTypes = data["settings"]["modTypes"]
-            self.mods = data["settings"]["mods"]
-            if "maxDepth" in data["settings"]:
-                self.indexAmountBox.setValue(data["settings"]["maxDepth"])
-            if "search" in data["settings"]:
-                self.searchBox.setText(data["settings"]["search"])
-            # Set button text
-            self.ignoreButton.setText("Ignore (%d)" % len(self.ignorables))
-            self.modListButton.setText("Mods (%d)" % len(self.mods))
-            self.filterListButton.setText("Filters (%d)" % len(self.ignoreTypes))
-            # Deserialize root asset
-            self.rootAsset = Asset(data["rootAsset"]["assetType"], data["rootAsset"]["assetName"], data["rootAsset"]["assetPath"], data["rootAsset"]["mod"], data["rootAsset"]["children"])
-            # Deserialize assets
-            self.everyAsset = {}
-            for uuid, assetData in data["assets"].items():
-                asset = Asset(assetData["assetType"], assetData["assetName"], assetData["assetPath"], assetData["mod"], assetData["children"])
+                # Deserialize settings
+                if settingsOnly:
+                    for ignore in data["settings"]["ignorables"]:
+                        if ignore not in self.ignorables:
+                            self.ignorables.append(ignore)
+                    for mod in data["settings"]["mods"]:
+                        if mod not in self.mods:
+                            self.mods.append(mod)
+                    self.ignoreTypes = data["settings"]["ignoreTypes"]
+                    self.modTypes = data["settings"]["modTypes"]
+                    if "maxDepth" in data["settings"]:
+                        self.indexAmountBox.setValue(data["settings"]["maxDepth"])
+                    if "search" in data["settings"]:
+                        self.searchBox.setText(data["settings"]["search"])
+                    # Set button text
+                    self.ignoreButton.setText("Ignore (%d)" % len(self.ignoreTypes))
+                    self.modListButton.setText("Mods (%d)" % len(self.modTypes))
+                    self.filterListButton.setText("Filters (%d)" % len(self.filterTypes))
+                else:
+                    # Determine override or merge
+                    if override:
+                        self.loadOverride(data)
+                    else:
+                        self.loadMerge(data)
+                    # Resest list
+                    self.list.clear()
+                    # Update list
+                    self.recursiveUpdateList()
+                    # Update tags
+                    self.loadAssetTags()
+                    # Update list for tags
+                    self.addTagsToList()
+                    # Set filename
+                    self.filename = filename
+                # Expand top level items
+                for i in range(self.list.topLevelItemCount()):
+                    self.list.topLevelItem(i).setExpanded(True)
+                # Click on first item
+                self.list.setCurrentItem(self.list.topLevelItem(0))
+                self.listItemClicked(self.list.topLevelItem(0))
+                # If search box is not empty, search
+                if self.searchBox.text() != "":
+                    self.searchBoxTextChanged(self.searchBox.text())
+                # Set status
+                self.statusText.setText("Loaded")
+
+    def loadOverride(self, data):
+        # Deserialize root asset
+        self.rootAsset = Asset(data["rootAsset"]["assetType"], data["rootAsset"]["assetName"], data["rootAsset"]["assetPath"], data["rootAsset"]["mod"], data["rootAsset"]["children"])
+        # Deserialize assets
+        self.everyAsset = {}
+        for uuid, assetData in data["assets"].items():
+            asset = Asset(assetData["assetType"], assetData["assetName"], assetData["assetPath"], assetData["mod"], assetData["children"])
+            self.everyAsset[uuid] = asset
+        
+    def loadMerge(self, data):
+        # Deserialize root asset children
+        curRootAssetChildren = data["rootAsset"]["children"]
+        # Deserialize assets
+        curEveryAsset = {}
+        modMismatchDetected = False
+        for uuid, assetData in data["assets"].items():
+            # Check if assetData["mod"] is in self.modTypes
+            if assetData["mod"] not in self.modTypes:
+                modMismatchDetected = True
+            asset = Asset(assetData["assetType"], assetData["assetName"], assetData["assetPath"], assetData["mod"], assetData["children"])
+            curEveryAsset[uuid] = asset
+        # Merge root asset
+        for uuid in curRootAssetChildren:
+            if uuid not in self.rootAsset.children:
+                self.rootAsset.children.append(uuid)
+        # Merge assets
+        for uuid, asset in curEveryAsset.items():
+            if uuid not in self.everyAsset:
+                # Add asset to list
                 self.everyAsset[uuid] = asset
-            self.list.clear()
-            # Update list
-            self.recursiveUpdateList()
-            # Update tags
-            self.loadAssetTags()
-            # Update list for tags
-            self.addTagsToList()
-            # Expand top level items
-            for i in range(self.list.topLevelItemCount()):
-                self.list.topLevelItem(i).setExpanded(True)
-            # Click on first item
-            self.list.setCurrentItem(self.list.topLevelItem(0))
-            self.listItemClicked(self.list.topLevelItem(0))
-            # If search box is not empty, search
-            if self.searchBox.text() != "":
-                self.searchBoxTextChanged(self.searchBox.text())
-            
+            else:
+                # Add missing children
+                for child in asset.children:
+                    if child not in self.everyAsset[uuid].children:
+                        self.everyAsset[uuid].children.append(child)
+        # If mod mismatch detected, show warning
+        if modMismatchDetected:
+            QtGui.QMessageBox.warning(self, "Asset Browser: Warning", "Some assets in the loaded index hive are currently filtered out by mod.\nIn order to view these new assets, you will need to add the mod(s) to\nthe filter or reload the settings to apply from this file.")
+
+    def saveButtonMenuAboutToShow(self):
+        # Clear menu
+        self.saveButtonMenu.clear()
+        # Save text
+        if self.filename:
+            action = QtGui.QAction("Save: " + self.filename, self.saveButtonMenu)
+            action.setEnabled(False)
+            self.saveButtonMenu.addAction(action)
+        else:
+            action = QtGui.QAction("Save: New file", self.saveButtonMenu)
+            action.setEnabled(False)
+            self.saveButtonMenu.addAction(action)
+        # Save
+        action = QtGui.QAction("Save", self.saveButtonMenu)
+        action.triggered.connect(self.save)
+        self.saveButtonMenu.addAction(action)
+        # Save as
+        action = QtGui.QAction("Save as...", self.saveButtonMenu)
+        action.triggered.connect(lambda: self.save(saveAs=True))
+        self.saveButtonMenu.addAction(action)
+        # Load text
+        action = QtGui.QAction("Load:", self.saveButtonMenu)
+        action.setEnabled(False)
+        self.saveButtonMenu.addAction(action)
+        # Load merge
+        action = QtGui.QAction("Load and merge index...", self.saveButtonMenu)
+        action.triggered.connect(lambda: self.load(override=False))
+        self.saveButtonMenu.addAction(action)
+        # Load override
+        action = QtGui.QAction("Load and override index...", self.saveButtonMenu)
+        action.triggered.connect(lambda: self.load(override=True))
+        self.saveButtonMenu.addAction(action)
+        # Reload
+        action = QtGui.QAction("Reload current index", self.saveButtonMenu)
+        action.triggered.connect(lambda: self.load(filename=self.filename, override=True))
+        self.saveButtonMenu.addAction(action)
+        # Settings text
+        action = QtGui.QAction("Settings:", self.saveButtonMenu)
+        action.setEnabled(False)
+        self.saveButtonMenu.addAction(action)
+        # Load settings
+        action = QtGui.QAction("Load settings...", self.saveButtonMenu)
+        action.triggered.connect(lambda: self.load(settingsOnly=True))
+        self.saveButtonMenu.addAction(action)
+        # Reload settings
+        action = QtGui.QAction("Reload settings", self.saveButtonMenu)
+        action.triggered.connect(lambda: self.load(settingsOnly=True, filename=self.filename))
+        self.saveButtonMenu.addAction(action)
+
     def ignoreButtonMenuAboutToShow(self):
         # Clear menu
         self.ignoreButtonMenu.clear()
@@ -672,7 +776,6 @@ class AssetBrowserWindow(QtGui.QWidget):
             self.modListButton.setEnabled(False)
             self.indexAmountBox.setEnabled(False)
             self.saveButton.setEnabled(False)
-            self.loadButton.setEnabled(False)
             # Clear list
             self.list.clear()
             # Clear grid
@@ -704,7 +807,6 @@ class AssetBrowserWindow(QtGui.QWidget):
             self.modListButton.setEnabled(True)
             self.indexAmountBox.setEnabled(True)
             self.saveButton.setEnabled(True)
-            self.loadButton.setEnabled(True)
 
     def getUUID(self, path):
         # Get uuid from path
@@ -831,8 +933,9 @@ class AssetBrowserWindow(QtGui.QWidget):
         if depth == 0:
             item_small.setExpanded(True)
         elif depth == 1:
-            # Add to ignore list
-            self.ignorables.append(assetParent.assetName)
+            # Add to ignore list if not already there
+            if assetParent.assetName not in self.ignorables:
+                self.ignorables.append(assetParent.assetName)
         # Add children
         for childUuid in assetParent.children:
             child = self.getAssetFromUUID(childUuid)
@@ -1184,6 +1287,7 @@ class AssetBrowserWindow(QtGui.QWidget):
             # Get assets from children
             assets = []
             for child in tag["children"]:
+                originalchild = child
                 # Replace / with \
                 child = child.replace("/", "\\")
                 asset = self.recursiveGetAssetFromPath(child)
@@ -1200,16 +1304,15 @@ class AssetBrowserWindow(QtGui.QWidget):
                     # Get asset type
                     assetType = self.getTypeOfAsset(baseName, fullPath)
                     # Make uuid for asset
-                    nonModPath = fullPath[fullPath.find("\\")+1:]
+                    nonModPath = originalchild[originalchild.find("\\")+1:]
                     nonModPath = nonModPath[nonModPath.find("\\")+1:]
                     nonModPath = nonModPath.replace("\\", "/")
-                    modPath = child.replace("\\", "/")
+                    modPath = originalchild.replace("\\", "/")
                     modPath = modPath[modPath.find("/")+1:]
                     # Regex /.* to get the mod name
                     modPath = re.sub("/.*", "", modPath)
                     # Create asset
-                    asset = Asset(assetType, baseName, fullPath, modPath, [])
-                    # Get uuid
+                    asset = Asset(assetType, baseName, originalchild, modPath, [])
                     uuid = self.getUUID(nonModPath)
                     # Add asset to self.everyAsset
                     self.everyAsset[uuid] = asset
