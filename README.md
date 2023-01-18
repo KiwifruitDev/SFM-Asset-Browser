@@ -6,10 +6,11 @@ This is a simple asset browser script for Source Filmmaker.
 
 ## Features
 
+- Setting thumbnails (cannot generate thumbnails automatically)
 - Saving/loading of asset index
 - Ignore specific heavy folders
 - Set depth level of indexing
-- Search
+- Search by keyword
 - Filter by type and mod
 - Browse folders in a tree view
 - Double click on folders to expand them
@@ -18,7 +19,7 @@ This is a simple asset browser script for Source Filmmaker.
 - Copying paths to clipboard
 - Visiting the file in explorer
 - Previewing of sounds (requires game window/F11)
-- Viewing textures/materials in external apps (VTFEdit?)
+- Viewing assets in external apps (HLMV, VTFEdit, etc.)
 - Session loading
 - Map loading
 
@@ -39,9 +40,19 @@ The first time you open the asset browser, no assets will be indexed. This gives
 
 To index assets, click the `Refresh` button in the toolbar. This will recursively search through the `game` folder while filtering out anything specified.
 
-You may save the index hive by clicking the `Save` button in the toolbar and choosing a location to save the file. This will save the index hive to a JSON file, which can be loaded later.
+### Saving and Loading Index Hives & Settings
 
-When loading an index hive, the current index hive and filter settings will be discarded.
+Opening the `File Options` menu in the toolbar will provide options to save and load index hives and filter settings.
+
+There are options for saving to a current file, saving to a new file, loading while merging, and loading while replacing.
+
+Reload options are also available, which restores the index hive and filter settings to the last saved state.
+
+Merging the index hive will append the new index hive to the current one, and will not remove any assets that are not in the new index hive.
+
+Replacing the index hive will discard the current index hive and replace it with the new one.
+
+Settings will always be replaced.
 
 ### Filtering
 
@@ -123,6 +134,22 @@ To visit the location of an asset in explorer, right click on the asset and clic
 For folder assets, this will open the folder itself.
 
 For file assets, this will open the folder containing the file.
+
+### Thumbnails
+
+Thumbnails can be optionally added to assets when right clicking on an asset.
+
+First, you'll need an image. This can be an external image file or an image saved to the clipboard.
+
+Then, right click on the asset and click `Set thumbnail from file` or `Set thumbnail from clipboard`.
+
+The thumbnail will be saved to the `game/assetbrowser/thumbnails` folder with the directory structure of the asset.
+
+To clear a thumbnail, right click on the asset and click `Clear thumbnail`. This will delete the thumbnail file.
+
+There is no way to generate a thumbnail from an asset.
+
+If you would like to quickly set thumbnails, you may use the Snipping Tool (Win + Shift + S) to take a screenshot of the asset preview and then set the thumbnail from the clipboard.
 
 ## Installation
 

@@ -22,9 +22,10 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+from PIL import ImageTk, Image
 from PySide import QtCore, QtGui, shiboken
 from vs import g_pDataModel as dm
-import vs, sfmApp, sfm, sfmUtils, json, os, urllib, zipfile, hashlib, re, subprocess, threading, time
+import vs, sfmApp, sfm, sfmUtils, json, os, urllib, zipfile, hashlib, re, subprocess, threading, time, Tkinter
 
 assetBrowser_repo = "https://github.com/KiwifruitDev/SFM-Asset-Browser/releases/latest/download/assetbrowser.zip"
 assetBrowser_modPath = "assetbrowser"
@@ -241,6 +242,99 @@ class AssetBrowserWindow(QtGui.QWidget):
         Tag("Model Stack", "modelstack", assetBrowser_modPath + "/images/assettags/modelstack_sm.png", []),
     ]
 
+    def createThumbnailForAsset(self, asset, image):
+        # Is image valid?
+        if image is None:
+            return
+        # Is asset valid?
+        if asset is None:
+            return
+        cwd = os.getcwd()
+        # Get PIL image
+        image = Image.open(image)
+        # Center crop image to 128x128
+        width = image.size[0]
+        height = image.size[1]
+        if width > height:
+            # Landscape
+            newWidth = height
+            newHeight = height
+            x = (width - height) / 2
+            y = 0
+        else:
+            # Portrait
+            newWidth = width
+            newHeight = width
+            x = 0
+            y = (height - width) / 2
+        image = image.crop((x, y, x + newWidth, y + newHeight))
+        # Resize image to 128x128
+        image = image.resize((128, 128), Image.ANTIALIAS)
+        # Paste type icon at top left (18x18)
+        typeIconPath = self.assetIcons_Small[asset.assetType]
+        typeIconPath = os.path.join(cwd, typeIconPath.replace("/", "\\"))
+        if os.path.exists(typeIconPath):
+            typeIcon = Image.open(typeIconPath)
+            if typeIcon is not None:
+                # Add shadow
+                shadow = Image.new("RGBA", (18, 18), (0, 0, 0, 255))
+                image.paste(shadow, (3, 3), typeIcon)
+                # Paste icon
+                image.paste(typeIcon, (2, 2), typeIcon)
+        # Get path (remove .\\ from path)
+        path = asset.assetPath.replace(".\\", "")
+        path = path.replace("\\", "/")
+        # Remove mod from path
+        path = path[path.find("/"):]
+        # Set thumbnail path
+        path = assetBrowser_modPath + "/thumbnails" + path + ".png"
+        # Combine with cwd
+        path = os.path.join(cwd, path.replace("/", "\\"))
+        # Make sure directory exists
+        directory = os.path.dirname(path)
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+        # Save image
+        image.save(path)
+    
+    def removeThumbnailForAsset(self, asset):
+        # Is asset valid?
+        if asset is None:
+            return
+        # Get path (remove .\\ from path)
+        path = asset.assetPath.replace(".\\", "")
+        path = path.replace("\\", "/")
+        # Remove mod from path
+        path = path[path.find("/"):]
+        # Set thumbnail path
+        path = assetBrowser_modPath + "/thumbnails" + path + ".png"
+        # Combine with cwd
+        cwd = os.getcwd()
+        path = os.path.join(cwd, path.replace("/", "\\"))
+        # Remove thumbnail
+        if os.path.exists(path):
+            os.remove(path)
+
+    def getThumbnailForAsset(self, asset):
+        # Is asset valid?
+        if asset is None:
+            return self.assetIcons_Large["generic"]
+        # Get path (remove .\\ from path)
+        path = asset.assetPath.replace(".\\", "")
+        path = path.replace("\\", "/")
+        # Remove mod from path
+        path = path[path.find("/"):]
+        # Get thumbnail path
+        thumbnailPath = assetBrowser_modPath + "/thumbnails" + path + ".png"
+        # Check if thumbnail exists
+        if os.path.isfile(thumbnailPath):
+            # Combine with cwd
+            cwd = os.getcwd()
+            thumbnailPath = os.path.join(cwd, thumbnailPath.replace("/", "\\"))
+            # Return thumbnail
+            return thumbnailPath
+        return self.assetIcons_Large[asset.assetType]
+
     def getTypeOfAsset(self, assetFile, fullPath):
         # Check if assetFile is a folder
         if os.path.isdir(fullPath):
@@ -438,16 +532,6 @@ class AssetBrowserWindow(QtGui.QWidget):
         self.outerWidgetLayout.addWidget(self.innerWidget)
         # Set layout
         self.setLayout(self.outerWidgetLayout)
-        # DEBUG: Add 10 controls to each list to test
-        #for i in range(10):
-        #    item = QtGui.QListWidgetItem()
-        #    item.setText("Item %d" % i)
-        #    item.setData(QtCore.Qt.DecorationRole, QtGui.QImage(self.assetIcons_Large["generic"]))
-        #    self.gridList.addItem(item)
-        #    item_small = QtGui.QTreeWidgetItem()
-        #    item_small.setText(0, "Item %d" % i)
-        #    item_small.setIcon(0, QtGui.QPixmap.fromImage(self.assetIcons_Small["generic"]))
-        #    self.list.addTopLevelItem(item_small)
         # Make sure assetBrowser_modPath exists
         if not os.path.isdir(assetBrowser_modPath):
             os.makedirs(assetBrowser_modPath)
@@ -754,7 +838,9 @@ class AssetBrowserWindow(QtGui.QWidget):
                         # Add to grid list
                         item = QtGui.QListWidgetItem()
                         item.setText(asset.assetName)
-                        item.setData(QtCore.Qt.DecorationRole, QtGui.QImage(self.assetIcons_Large[asset.assetType]))
+                        thumbnail = self.getThumbnailForAsset(asset)
+                        if thumbnail:
+                            item.setData(QtCore.Qt.DecorationRole, QtGui.QImage(thumbnail))
                         item.setToolTip(asset.assetPath)
                         self.gridList.addItem(item)
         else:
@@ -1086,7 +1172,9 @@ class AssetBrowserWindow(QtGui.QWidget):
                     if child.assetType in self.filterTypes and child.mod in self.modTypes:
                         item = QtGui.QListWidgetItem()
                         item.setText(child.assetName)
-                        item.setData(QtCore.Qt.DecorationRole, QtGui.QImage(self.assetIcons_Large[child.assetType]))
+                        thumbnail = self.getThumbnailForAsset(child)
+                        if thumbnail:
+                            item.setData(QtCore.Qt.DecorationRole, QtGui.QImage(thumbnail))
                         item.setToolTip(child.assetPath)
                         self.gridList.addItem(item)
         else:
@@ -1098,7 +1186,9 @@ class AssetBrowserWindow(QtGui.QWidget):
                     for asset in tag.children:
                         item = QtGui.QListWidgetItem()
                         item.setText(asset.assetName)
-                        item.setData(QtCore.Qt.DecorationRole, QtGui.QImage(self.assetIcons_Large[asset.assetType]))
+                        thumbnail = self.getThumbnailForAsset(asset)
+                        if thumbnail:
+                            item.setData(QtCore.Qt.DecorationRole, QtGui.QImage(thumbnail))
                         item.setToolTip(asset.assetPath)
                         self.gridList.addItem(item)
                     break
@@ -1120,17 +1210,13 @@ class AssetBrowserWindow(QtGui.QWidget):
             # Create context menu
             menu = QtGui.QMenu()
             # Add actions text
-            action = QtGui.QAction(asset.assetType == "folder" and "Folder:" or "File:", self)
+            action = QtGui.QAction(asset.assetType == "folder" and "Folder: " or "File: " + asset.assetPath, self)
             action.setEnabled(False)
             menu.addAction(action)
             # Add preview action
-            #action = QtGui.QAction("Preview", self)
-            #action.triggered.connect(lambda: self.assetClicked(asset))
-            #menu.addAction(action)
-            # Add import action
-            #action = QtGui.QAction("Import", self)
-            #action.triggered.connect(lambda: self.assetDoubleClicked(asset))
-            #menu.addAction(action)
+            action = QtGui.QAction("Preview", self)
+            action.triggered.connect(lambda: self.assetDoubleClicked(asset))
+            menu.addAction(action)
             # Add copy path action
             action = QtGui.QAction("Copy path", self)
             action.triggered.connect(lambda: self.copyPath(asset))
@@ -1143,8 +1229,9 @@ class AssetBrowserWindow(QtGui.QWidget):
             action = QtGui.QAction("Open folder", self)
             action.triggered.connect(lambda: self.openFolder(asset))
             menu.addAction(action)
-            # Add tag text if not a folder
+            # File only options
             if asset.assetType != "folder":
+                # Add tag text
                 action = QtGui.QAction("Tags:", self)
                 action.setEnabled(False)
                 menu.addAction(action)
@@ -1161,12 +1248,61 @@ class AssetBrowserWindow(QtGui.QWidget):
                             break
                     action.triggered.connect(lambda tagValue=tag.tagValue: self.tagAsset(asset, tagValue))
                     menu.addAction(action)
+                # Add thumbnail text
+                action = QtGui.QAction("Thumbnail:", self)
+                action.setEnabled(False)
+                menu.addAction(action)
+                # Add thumbnail actions
+                action = QtGui.QAction("Set thumbnail from file", self)
+                action.triggered.connect(lambda: self.setThumbnail(asset))
+                menu.addAction(action)
+                # Add thumbnail actions
+                action = QtGui.QAction("Set thumbnail from clipboard", self)
+                action.triggered.connect(lambda: self.setThumbnailClipboard(asset))
+                menu.addAction(action)
+                # Clear thumbnail action
+                action = QtGui.QAction("Clear thumbnail", self)
+                action.triggered.connect(lambda: self.clearThumbnail(asset))
+                menu.addAction(action)
             # Add mod text
             action = QtGui.QAction("Mod: " + asset.mod, self)
             action.setEnabled(False)
             menu.addAction(action)
+            # Add type text
+            action = QtGui.QAction("Type: " + asset.assetType, self)
+            action.setEnabled(False)
+            menu.addAction(action)
             # Show menu
             menu.exec_(QtGui.QCursor.pos())
+
+    def setThumbnail(self, asset):
+        # Get thumbnail
+        thumbnail, type = QtGui.QFileDialog.getOpenFileName(self, "Select thumbnail", os.getcwd(), "Image files (*.png *.jpg *.jpeg *.bmp *.gif)")
+        if thumbnail:
+            # Create thumbnail
+            self.createThumbnailForAsset(asset, thumbnail)
+            # Refresh grid
+            self.listItemClicked(self.list.currentItem())
+
+    def setThumbnailClipboard(self, asset):
+        # Get thumbnail from clipboard
+        clipboard = QtGui.QApplication.clipboard()
+        thumbnail = clipboard.image()
+        if thumbnail:
+            # Temporarily save thumbnail
+            thumbnail.save(assetBrowser_modPath + "/temp.png")
+            # Create thumbnail
+            self.createThumbnailForAsset(asset, assetBrowser_modPath + "/temp.png")
+            # Refresh grid
+            self.listItemClicked(self.list.currentItem())
+            # Delete temporary thumbnail
+            os.remove(assetBrowser_modPath + "/temp.png")
+
+    def clearThumbnail(self, asset):
+        # Remove thumbnail
+        self.removeThumbnailForAsset(asset)
+        # Refresh grid
+        self.listItemClicked(self.list.currentItem())
 
     def copyPath(self, asset):
         # Remove .\ from path
