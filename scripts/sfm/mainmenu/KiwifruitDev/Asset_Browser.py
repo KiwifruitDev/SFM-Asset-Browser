@@ -472,7 +472,7 @@ class AssetBrowserWindow(QtGui.QWidget):
         self.toolbarLayout.addWidget(self.indexAmountBox)
         # Create filter list button
         self.filterListButton = QtGui.QToolButton(self.toolbar)
-        self.filterListButton.setText("Filters (%d)" % len(self.filterTypes))
+        self.filterListButton.setText("Types (%d)" % len(self.filterTypes))
         self.filterListButton.setToolButtonStyle(QtCore.Qt.ToolButtonTextBesideIcon)
         self.filterListButton.setPopupMode(QtGui.QToolButton.InstantPopup)
         self.filterListButton.setToolTip("These are the different types of files. Only add what you think you need.")
@@ -630,7 +630,7 @@ class AssetBrowserWindow(QtGui.QWidget):
                     # Set button text
                     self.ignoreButton.setText("Ignore (%d)" % len(self.ignoreTypes))
                     self.modListButton.setText("Mods (%d)" % len(self.modTypes))
-                    self.filterListButton.setText("Filters (%d)" % len(self.filterTypes))
+                    self.filterListButton.setText("Types (%d)" % len(self.filterTypes))
                 else:
                     # Determine override or merge
                     if override:
@@ -817,7 +817,7 @@ class AssetBrowserWindow(QtGui.QWidget):
             if action.isChecked():
                 self.filterTypes.append(action.text())
         # Update filter list button text
-        self.filterListButton.setText("Filters (%d)" % len(self.filterTypes))
+        self.filterListButton.setText("Types (%d)" % len(self.filterTypes))
         searchText = self.searchBox.text()
         if searchText != "":
             self.searchBoxTextChanged(searchText)
@@ -1085,6 +1085,9 @@ class AssetBrowserWindow(QtGui.QWidget):
             sfm.console("play " + basePath)
 
     def assetDoubleClicked(self, asset):
+        # If searching and this is a folder, pass
+        if asset.assetType == "folder" and self.searchBox.text() != "":
+            return
         # Get base path (remove .\*\*\)
         basePath = asset.assetPath
         # Remove .\ from path
@@ -1214,11 +1217,19 @@ class AssetBrowserWindow(QtGui.QWidget):
             action.setEnabled(False)
             menu.addAction(action)
             # Add preview action
-            action = QtGui.QAction("Preview", self)
+            action = QtGui.QAction(asset.assetType == "folder" and "Navigate" or "Preview", self)
             action.triggered.connect(lambda: self.assetDoubleClicked(asset))
+            # Disable if searching
+            if self.searchBox.text() != "" and asset.assetType == "folder":
+                action.setEnabled(False)
+            # Add action
+            menu.addAction(action)
+            # Path text
+            action = QtGui.QAction("Path:", self)
+            action.setEnabled(False)
             menu.addAction(action)
             # Add copy path action
-            action = QtGui.QAction("Copy path", self)
+            action = QtGui.QAction("Copy full path", self)
             action.triggered.connect(lambda: self.copyPath(asset))
             menu.addAction(action)
             # Add copy relative path action
@@ -1226,7 +1237,7 @@ class AssetBrowserWindow(QtGui.QWidget):
             action.triggered.connect(lambda: self.copyRelativePath(asset))
             menu.addAction(action)
             # Add open folder action
-            action = QtGui.QAction("Open folder", self)
+            action = QtGui.QAction("Open in explorer", self)
             action.triggered.connect(lambda: self.openFolder(asset))
             menu.addAction(action)
             # File only options
@@ -1283,6 +1294,9 @@ class AssetBrowserWindow(QtGui.QWidget):
             self.createThumbnailForAsset(asset, thumbnail)
             # Refresh grid
             self.listItemClicked(self.list.currentItem())
+            # Reload search
+            if self.searchBox.text() != "":
+                self.searchBoxTextChanged(self.searchBox.text())
 
     def setThumbnailClipboard(self, asset):
         # Get thumbnail from clipboard
@@ -1295,6 +1309,9 @@ class AssetBrowserWindow(QtGui.QWidget):
             self.createThumbnailForAsset(asset, assetBrowser_modPath + "/temp.png")
             # Refresh grid
             self.listItemClicked(self.list.currentItem())
+            # Reload search
+            if self.searchBox.text() != "":
+                self.searchBoxTextChanged(self.searchBox.text())
             # Delete temporary thumbnail
             os.remove(assetBrowser_modPath + "/temp.png")
 
@@ -1303,6 +1320,9 @@ class AssetBrowserWindow(QtGui.QWidget):
         self.removeThumbnailForAsset(asset)
         # Refresh grid
         self.listItemClicked(self.list.currentItem())
+        # Reload search
+        if self.searchBox.text() != "":
+            self.searchBoxTextChanged(self.searchBox.text())
 
     def copyPath(self, asset):
         # Remove .\ from path
@@ -1372,10 +1392,11 @@ class AssetBrowserWindow(QtGui.QWidget):
                 assetBrowser_globalModelStack.append(baseName)
         # Save tags
         self.saveAssetTags()
-        # Reload list if search is empty
-        if self.searchBox.text() == "":
-            self.list.setCurrentItem(self.list.currentItem())
-            self.listItemClicked(self.list.currentItem())
+        # Refresh grid
+        self.listItemClicked(self.list.currentItem())
+        # Reload search
+        if self.searchBox.text() != "":
+            self.searchBoxTextChanged(self.searchBox.text())
     
     def gridItemDoubleClicked(self, item):
         # Get asset from path

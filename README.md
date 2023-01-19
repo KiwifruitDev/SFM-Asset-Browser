@@ -2,7 +2,7 @@
 
 This is a simple asset browser script for Source Filmmaker.
 
-![Screenshot of Asset Browser](https://i.imgur.com/2QujuUI.png)
+![Screenshot of Asset Browser](https://i.imgur.com/vfnOvKv.png)
 
 ## Features
 
@@ -66,7 +66,7 @@ Only filtered assets will be included in the index hive.
 
 ### Tags
 
-Tags are a way to add custom icons to assets. They can be used to group assets together, or to mark assets as special.
+Tags are a way to group assets together, or to mark assets as special.
 
 At the moment, tags cannot be added or removed from the asset browser. They must be added to a specific JSON file located at `game/assetbrowser/assettags.json`.
 
@@ -137,7 +137,7 @@ For file assets, this will open the folder containing the file.
 
 ### Thumbnails
 
-Thumbnails can be optionally added to assets when right clicking on an asset.
+Thumbnails can be optionally added to assets.
 
 First, you'll need an image. This can be an external image file or an image saved to the clipboard.
 
