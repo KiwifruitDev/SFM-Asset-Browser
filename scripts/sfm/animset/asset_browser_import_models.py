@@ -26,15 +26,20 @@ from PySide import QtCore, QtGui, shiboken
 from vs import g_pDataModel as dm
 import vs, sfmApp, sfm, sfmUtils, json, os, math
 
-# TODO: This doesn't move to the camera like it should.
-
 if globals().get("assetBrowser_globalModelStack") is None:
-    QtGui.QMessageBox.critical(None, "Error", "Asset Browser is not loaded.")
-    assetBrowser_globalModelStack = []
-
-for modelName in assetBrowser_globalModelStack:
-    # Get base name without extension and paths
-    baseName = os.path.basename(modelName)
-    baseName = os.path.splitext(baseName)[0]
-    # Create model
-    sfmUtils.CreateModelAnimationSet(baseName, modelName)
+    QtGui.QMessageBox.critical(None, "Asset Browser: Error", "Asset Browser is not loaded.")
+else:
+    # Create temporary AssetBrowser_ModelImport() instance
+    assetBrowser_modelImport = AssetBrowser_ModelImport()
+    # Loop models
+    assetBrowser_modelImportErrorString = assetBrowser_modelImport.loopModels()
+    # Delete temporary AssetBrowser_ModelImport() instance
+    del assetBrowser_modelImport
+    # Show error message if there was an error
+    if assetBrowser_modelImportErrorString != "":
+        QtGui.QMessageBox.critical(None, "Asset Browser: Error", assetBrowser_modelImportErrorString)
+    #else:
+        # Show success message
+        #QtGui.QMessageBox.information(None, "Asset Browser: Model Import", "Imported %d model(s)." % len(assetBrowser_globalModelStack))
+    # Delete error string
+    del assetBrowser_modelImportErrorString

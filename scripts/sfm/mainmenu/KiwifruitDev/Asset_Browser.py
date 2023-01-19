@@ -25,42 +25,112 @@
 from PIL import ImageTk, Image
 from PySide import QtCore, QtGui, shiboken
 from vs import g_pDataModel as dm
-import vs, sfmApp, sfm, sfmUtils, json, os, urllib, zipfile, hashlib, re, subprocess, threading, time, Tkinter
+import vs, sfmApp, sfm, sfmUtils, json, os, urllib, zipfile, hashlib, re, subprocess, threading, time, Tkinter, unicodedata
 
+# Global variables
 assetBrowser_repo = "https://github.com/KiwifruitDev/SFM-Asset-Browser/releases/latest/download/assetbrowser.zip"
 assetBrowser_modPath = "assetbrowser"
 assetBrowser_globalModelStack = []
 assetBrowser_version = "2"
-assetBrowser_window = None
+#assetBrowser_window = None
 
-class Tag:
+# This class is used externally to import models.
+class AssetBrowser_ModelImport():
+    def __init__(self):
+        pass
+
+    errorString = ""
+
+    def modelImport(self, modelPath):
+        if modelPath == "":
+            self.errorString = "No model path given."
+            return False
+        # Get base name without extension and paths
+        baseName = os.path.basename(modelPath)
+        baseName = os.path.splitext(baseName)[0]
+        if baseName == "":
+            self.errorString = "Failed to get base name."
+            return False
+        # If unicode, convert to ascii
+        if isinstance(baseName, unicode):
+            baseName = unicodedata.normalize('NFKD', baseName).encode('ascii','ignore')
+            if baseName == "":
+                self.errorString = "Failed to convert base name to ascii."
+                return False
+        #sfmUtils.CreateModelAnimationSet(baseName, modelPath)
+        # Replacement for sfmUtils.CreateModelAnimationSet:
+        # Get shot
+        shot = sfm.GetCurrentShot()
+        if shot is None:
+            self.errorString = "No shot found at current time."
+            return False
+        # Make SFM model
+        model = sfm.CreateModel( modelPath )
+        if model == None:
+            self.errorString = "Failed to create model."
+            return False
+        # Make animation set
+        animSet = sfm.CreateAnimationSet( baseName, target=model )
+        if animSet == None:
+            self.errorString = "Failed to create animation set."
+            return False
+        # Get file ID
+        fileId = shot.GetFileId()
+        if fileId == None:
+            self.errorString = "Failed to get file ID."
+            return False
+        # Make dag
+        dag = vs.CreateElement( "DmeDag", baseName, fileId )
+        if dag == None:
+            self.errorString = "Failed to create DmeDag."
+            return False
+        # Add model to dag and dag to scene
+        dag.AddChild( model )
+        shot.scene.AddChild( dag )
+        return True
+    
+    def loopModels(self, modelStack=assetBrowser_globalModelStack):
+        # Loop through model stack and import models
+        for modelPath in modelStack:
+            if not self.modelImport(modelPath):
+                break
+        if self.errorString == "" and globals()["assetBrowser_window"] != None:
+            assetBrowser_window.setStatus("Imported %d" % len(modelStack))
+            print("Imported %d models" % len(modelStack))
+        return self.errorString
+
+# Tag class stores tag data loaded by JSON
+class AssetBrowser_Tag:
     def __init__(self, tagName, tagValue, tagImage, children):
         self.tagName = tagName
         self.tagValue = tagValue
         self.tagImage = tagImage
         self.children = children
+
     tagName = "Favorites"
     tagValue = "favorites"
     tagImage = assetBrowser_modPath + "/images/assettags/favorites_sm.png"
     children = []
 
-class Asset:
+# Asset class stores data used by the index hive to build directory structures and present assets
+class AssetBrowser_Asset:
     def __init__(self, assetType, assetName, assetPath, mod, children):
         self.assetType = assetType
         self.assetName = assetName
         self.assetPath = assetPath
         self.mod = mod
         self.children = children
+    
     assetType = "generic"
     assetName = ""
     assetPath = ""
     mod = ""
     children = []
 
-class AssetBrowserWindow(QtGui.QWidget):
-
+# Main Qt window class
+class AssetBrowser_Window(QtGui.QWidget):
     def __init__(self):
-        super(AssetBrowserWindow, self).__init__()
+        super(AssetBrowser_Window, self).__init__()
         self.assetTree = {}
         self.assetIcons_Large = {}
         self.assetIcons_Small = {}
@@ -193,7 +263,7 @@ class AssetBrowserWindow(QtGui.QWidget):
         "midi",
     ]
 
-    rootAsset = Asset("folder", "Root", ".", "", [])
+    rootAsset = AssetBrowser_Asset("folder", "Root", ".", "", [])
 
     everyAsset = {}
     
@@ -235,11 +305,11 @@ class AssetBrowserWindow(QtGui.QWidget):
     filename = ""
 
     defaultTags = [
-        Tag("Favorites", "favorites", assetBrowser_modPath + "/images/assettags/favorites_sm.png", []),
-        Tag("Red", "red", assetBrowser_modPath + "/images/assettags/red_sm.png", []),
-        Tag("Green", "green", assetBrowser_modPath + "/images/assettags/green_sm.png", []),
-        Tag("Blue", "blue", assetBrowser_modPath + "/images/assettags/blue_sm.png", []),
-        Tag("Model Stack", "modelstack", assetBrowser_modPath + "/images/assettags/modelstack_sm.png", []),
+        AssetBrowser_Tag("Favorites", "favorites", assetBrowser_modPath + "/images/assettags/favorites_sm.png", []),
+        AssetBrowser_Tag("Red", "red", assetBrowser_modPath + "/images/assettags/red_sm.png", []),
+        AssetBrowser_Tag("Green", "green", assetBrowser_modPath + "/images/assettags/green_sm.png", []),
+        AssetBrowser_Tag("Blue", "blue", assetBrowser_modPath + "/images/assettags/blue_sm.png", []),
+        AssetBrowser_Tag("Model Stack", "modelstack", assetBrowser_modPath + "/images/assettags/modelstack_sm.png", []),
     ]
 
     def createThumbnailForAsset(self, asset, image):
@@ -562,6 +632,10 @@ class AssetBrowserWindow(QtGui.QWidget):
         # Click on first item
         self.list.setCurrentItem(self.list.topLevelItem(0))
         self.listItemClicked(self.list.topLevelItem(0))
+
+    def setStatus(self, text):
+        self.statusText.setText(text)
+        self.statusText.repaint()
     
     def save(self, saveAs=False):
         # Serialize settings
@@ -661,11 +735,11 @@ class AssetBrowserWindow(QtGui.QWidget):
 
     def loadOverride(self, data):
         # Deserialize root asset
-        self.rootAsset = Asset(data["rootAsset"]["assetType"], data["rootAsset"]["assetName"], data["rootAsset"]["assetPath"], data["rootAsset"]["mod"], data["rootAsset"]["children"])
+        self.rootAsset = AssetBrowser_Asset(data["rootAsset"]["assetType"], data["rootAsset"]["assetName"], data["rootAsset"]["assetPath"], data["rootAsset"]["mod"], data["rootAsset"]["children"])
         # Deserialize assets
         self.everyAsset = {}
         for uuid, assetData in data["assets"].items():
-            asset = Asset(assetData["assetType"], assetData["assetName"], assetData["assetPath"], assetData["mod"], assetData["children"])
+            asset = AssetBrowser_Asset(assetData["assetType"], assetData["assetName"], assetData["assetPath"], assetData["mod"], assetData["children"])
             self.everyAsset[uuid] = asset
         
     def loadMerge(self, data):
@@ -678,7 +752,7 @@ class AssetBrowserWindow(QtGui.QWidget):
             # Check if assetData["mod"] is in self.modTypes
             if assetData["mod"] not in self.modTypes:
                 modMismatchDetected = True
-            asset = Asset(assetData["assetType"], assetData["assetName"], assetData["assetPath"], assetData["mod"], assetData["children"])
+            asset = AssetBrowser_Asset(assetData["assetType"], assetData["assetName"], assetData["assetPath"], assetData["mod"], assetData["children"])
             curEveryAsset[uuid] = asset
         # Merge root asset
         for uuid in curRootAssetChildren:
@@ -946,7 +1020,7 @@ class AssetBrowserWindow(QtGui.QWidget):
                 if secondFolder.lower() in self.ignoreTypes:
                     continue
             uuid = self.getUUID(nonModPath)
-            asset = Asset(assetType, item, fullpath, modPath, [])
+            asset = AssetBrowser_Asset(assetType, item, fullpath, modPath, [])
             # Does asset uuid already exist?
             taken = False
             for uuid2 in self.everyAsset.keys():
@@ -1383,23 +1457,26 @@ class AssetBrowserWindow(QtGui.QWidget):
                 # Remove tag
                 tag.children.remove(taggedAsset)
                 tagged = True
-        if not tagged:
-            # Add tag
-            tag.children.append(asset)
         # If modelstack tag, add to model stack
         if tag.tagValue == "modelstack":
             # Get model name
             basePath = asset.assetPath
-            basePath = basePath[basePath.find("\\")+1:]
-            basePath = basePath[basePath.find("\\")+1:]
-            baseName = basePath[basePath.rfind("/")+1:]
+            baseName = basePath[basePath.find("\\")+1:]
+            baseName = baseName[baseName.find("\\")+1:]
+            baseName = baseName[baseName.rfind("/")+1:]
             # Add model to creation stack
             if tagged:
                 # Remove model from stack
                 assetBrowser_globalModelStack.remove(baseName)
             else:
+                # Is this a model?
+                if asset.assetType != "model":
+                    return
                 # Add model to stack
                 assetBrowser_globalModelStack.append(baseName)
+        if not tagged:
+            # Add tag
+            tag.children.append(asset)
         # Save tags
         self.saveAssetTags()
         # Refresh grid
@@ -1482,19 +1559,21 @@ class AssetBrowserWindow(QtGui.QWidget):
                     # Regex /.* to get the mod name
                     modPath = re.sub("/.*", "", modPath)
                     # Create asset
-                    asset = Asset(assetType, baseName, originalchild, modPath, [])
+                    asset = AssetBrowser_Asset(assetType, baseName, originalchild, modPath, [])
                     uuid = self.getUUID(nonModPath)
                     # Add asset to self.everyAsset
                     self.everyAsset[uuid] = asset
                 assets.append(asset)
             # Add tag
-            self.tags.append(Tag(tag["tagName"], tag["tagValue"], tag["tagImage"], assets))
+            self.tags.append(AssetBrowser_Tag(tag["tagName"], tag["tagValue"], tag["tagImage"], assets))
         #except:
             #QtGui.QMessageBox.critical(self, "Asset Browser: Error", "Error reading assetTags.json. Asset tags will not be available.\nMaybe try restarting Source Filmmaker? Delete assetTags.json if possible.")
 
     def addTagsToList(self):
-        # Clear model stack
-        assetBrowser_globalModelStack = []
+        # Check if list is empty
+        if len(self.tags) == 0:
+            return
+        newModelStack = []
         # Add tags
         for tag in self.tags:
             # If tag is modelstack, add to model stack
@@ -1502,16 +1581,23 @@ class AssetBrowserWindow(QtGui.QWidget):
                 for asset in tag.children:
                     # Get model name
                     basePath = asset.assetPath
-                    basePath = basePath[basePath.find("\\")+1:]
-                    basePath = basePath[basePath.find("\\")+1:]
-                    baseName = basePath[basePath.rfind("/")+1:]
-                    # Add model to creation stack
-                    assetBrowser_globalModelStack.append(baseName)
+                    baseName = basePath[basePath.find("\\")+1:]
+                    baseName = baseName[baseName.find("\\")+1:]
+                    baseName = baseName[baseName.rfind("/")+1:]
+                    # Add model to creation stack if it's not already there
+                    if baseName not in assetBrowser_globalModelStack:
+                        assetBrowser_globalModelStack.append(baseName)
+                        newModelStack.append(baseName)
             # Create item
             item_small = QtGui.QTreeWidgetItem(self.list)
             item_small.setText(0, tag.tagName)
             item_small.setIcon(0, QtGui.QPixmap.fromImage(QtGui.QImage(tag.tagImage)))
             item_small.setToolTip(0, tag.tagValue)
+        # Compare new model stack to old model stack
+        for model in assetBrowser_globalModelStack:
+            if model not in newModelStack:
+                # Model was removed from model stack
+                assetBrowser_globalModelStack.remove(model)
 
     def saveAssetTags(self):
         # Format: {"tags":[{"tagName": "Tag Name", "tagValue": "tagValue", "tagImage": assetBrowser_modPath + "/images/assettags/tag_sm.png", "children": ["./hl2/sound/error.wav"]}, ...]}
@@ -1612,19 +1698,17 @@ class AssetBrowserWindow(QtGui.QWidget):
             
 try:
     # Create window if it doesn't exist
-    assetBrowser_globalModelStack = []
-    globalAssetBrowser = globals().get("assetBrowserWindow")
+    globalAssetBrowser = globals().get("assetBrowser_window")
     if globalAssetBrowser is None:
-        assetBrowserWindow=AssetBrowserWindow()
-        sfmApp.RegisterTabWindow("WindowAssetBrowser", "Asset Browser", shiboken.getCppPointer( assetBrowserWindow )[0])
+        assetBrowser_window=AssetBrowser_Window()
+        sfmApp.RegisterTabWindow("WindowAssetBrowser", "Asset Browser", shiboken.getCppPointer( assetBrowser_window )[0])
         sfmApp.ShowTabWindow("WindowAssetBrowser")
     else:
         dialog = QtGui.QMessageBox.warning(None, "Asset Browser: Error", "Asset Browser is already open.\n\nIf you are a developer, click Yes to forcibly open a new instance.\n\nOtherwise, click No to close this message.", QtGui.QMessageBox.Yes | QtGui.QMessageBox.No, QtGui.QMessageBox.No)
         if dialog == QtGui.QMessageBox.Yes:
-            assetBrowserWindow=AssetBrowserWindow()
-            sfmApp.RegisterTabWindow("WindowAssetBrowser", "Asset Browser", shiboken.getCppPointer( assetBrowserWindow )[0])
+            assetBrowser_window=AssetBrowser_Window()
+            sfmApp.RegisterTabWindow("WindowAssetBrowser", "Asset Browser", shiboken.getCppPointer( assetBrowser_window )[0])
             sfmApp.ShowTabWindow("WindowAssetBrowser")
-
 except Exception  as e:
     import traceback
     traceback.print_exc()        
