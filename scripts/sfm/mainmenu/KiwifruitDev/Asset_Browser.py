@@ -834,8 +834,18 @@ class AssetBrowserWindow(QtGui.QWidget):
             # Update grid list
             for assetUuid, asset in self.everyAsset.items():
                 if text.lower() in asset.assetName.lower():
-                    if asset.assetType in self.filterTypes and asset.mod in self.modTypes:
-                        # Add to grid list
+                    tagged = asset.assetType in self.filterTypes and asset.mod in self.modTypes
+                    # Check if asset is tagged
+                    if not tagged:
+                        for tag in self.tags:
+                            for child in tag.children:
+                                if child.assetPath == asset.assetPath:
+                                    tagged = True
+                                    break
+                            if tagged:
+                                break
+                    # Add to grid list
+                    if tagged:
                         item = QtGui.QListWidgetItem()
                         item.setText(asset.assetName)
                         thumbnail = self.getThumbnailForAsset(asset)
