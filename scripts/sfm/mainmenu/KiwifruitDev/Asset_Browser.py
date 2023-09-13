@@ -1514,7 +1514,7 @@ class AssetBrowser_Window(QtGui.QWidget):
             # Write json to file
             try:
                 #json.dump(preJson, f)
-                jsonstr = "{\"tags\": [{\"tagValue\": \"favorites\", \"children\": [], \"tagName\": \"Favorites\", \"tagImage\": \"assetbrowser/images/assettags/favorites_sm.png\"}, {\"tagValue\": \"red\", \"children\": [], \"tagName\": \"Red\", \"tagImage\": \"assetbrowser/images/assettags/red_sm.png\"}, {\"tagValue\": \"green\", \"children\": [], \"tagName\": \"Green\", \"tagImage\": \"assetbrowser/images/assettags/green_sm.png\"}, {\"tagValue\": \"blue\", \"children\": [], \"tagName\": \"Blue\", \"tagImage\": \"assetbrowser/images/assettags/blue_sm.png\"}, {\"tagValue\": \"modelstack\", \"children\": [], \"tagName\": \"Model Stack\", \"tagImage\": \"assetbrowser/images/assettags/modelstack_sm.png\"}]}"
+                jsonstr = "{\"tags\": [\n{\"tagValue\": \"favorites\", \"children\": [], \"tagName\": \"Favorites\", \"tagImage\": \"assetbrowser/images/assettags/favorites_sm.png\"},\n{\"tagValue\": \"red\", \"children\": [], \"tagName\": \"Red\", \"tagImage\": \"assetbrowser/images/assettags/red_sm.png\"},\n{\"tagValue\": \"green\", \"children\": [], \"tagName\": \"Green\", \"tagImage\": \"assetbrowser/images/assettags/green_sm.png\"},\n{\"tagValue\": \"blue\", \"children\": [], \"tagName\": \"Blue\", \"tagImage\": \"assetbrowser/images/assettags/blue_sm.png\"},\n{\"tagValue\": \"modelstack\", \"children\": [], \"tagName\": \"Model Stack\", \"tagImage\": \"assetbrowser/images/assettags/modelstack_sm.png\"}\n]}"
                 f.write(jsonstr)
                 f.close()
             except:
